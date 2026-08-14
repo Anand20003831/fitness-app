@@ -1,0 +1,192 @@
+:root{
+  --bg:#0f1115; --panel:#161a21; --panel2:#1c222b; --line:#2a323d;
+  --ink:#e8ecf1; --mute:#9aa7b6; --accent:#6ea8fe; --good:#5ec98a; --warn:#e8b34a;
+  --radius:12px;
+  --tabbar:64px;
+}
+@media (prefers-color-scheme: light){
+  :root{ --bg:#f7f8fa; --panel:#ffffff; --panel2:#f1f4f8; --line:#dde3ea;
+         --ink:#15181d; --mute:#5b6672; --accent:#2563c9; --good:#1f8a52; --warn:#9a6b06; }
+}
+
+*{box-sizing:border-box}
+html,body{overflow-x:hidden}
+body{
+  margin:0;background:var(--bg);color:var(--ink);
+  font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  -webkit-text-size-adjust:100%;
+  -webkit-tap-highlight-color:transparent;
+}
+
+/* ---------------------------------------------------------------- top bar */
+
+.topbar{
+  position:sticky;top:0;z-index:20;
+  display:flex;align-items:center;gap:10px;
+  padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;
+  background:var(--bg);
+  background:color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--line);
+}
+.brand{font-weight:650;letter-spacing:-.01em;font-size:16px;margin-right:auto}
+.pill{
+  display:inline-flex;align-items:center;gap:6px;
+  font-size:12.5px;font-weight:600;line-height:1;
+  padding:7px 11px;border-radius:99px;
+  border:1px solid var(--line);background:var(--panel);color:var(--mute);
+  white-space:nowrap;
+}
+.pill .dot{width:7px;height:7px;border-radius:99px;background:currentColor}
+.pill[data-state="synced"]{color:var(--good)}
+.pill[data-state="pending"]{color:var(--warn)}
+.pill[data-state="offline"]{color:var(--mute)}
+.pill[data-state="error"]{color:var(--warn);border-color:var(--warn)}
+
+/* ---------------------------------------------------------------- layout */
+
+main{
+  max-width:640px;margin:0 auto;
+  padding:16px 16px calc(var(--tabbar) + env(safe-area-inset-bottom) + 28px);
+}
+.hero{margin:4px 0 18px}
+.hero h1{font-size:27px;line-height:1.15;margin:0 0 4px;letter-spacing:-.02em}
+.hero .sub{color:var(--mute);font-size:14.5px;margin:0}
+.countdown{color:var(--accent);font-weight:600}
+
+.card{
+  background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+  padding:16px;margin:0 0 14px;
+}
+.card.tight{padding:6px 16px}
+.card-head{display:flex;align-items:baseline;gap:10px;margin:0 0 10px}
+.card-title{font-size:12.5px;font-weight:650;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);margin:0}
+.card-head .right{margin-left:auto;font-size:13px;color:var(--mute)}
+h2.section{font-size:19px;margin:26px 0 12px;letter-spacing:-.01em}
+.muted{color:var(--mute)}
+.small{font-size:13.5px;color:var(--mute)}
+.stack{display:flex;flex-direction:column;gap:10px}
+.spread{display:flex;align-items:center;gap:12px}
+.spread .grow{flex:1;min-width:0}
+
+/* ---------------------------------------------------------------- rows */
+
+.row{
+  display:flex;align-items:center;gap:14px;
+  min-height:56px;padding:8px 0;
+  border-bottom:1px solid var(--line);
+}
+.row:last-child{border-bottom:0}
+.row .name{font-weight:550;line-height:1.3}
+.row .meta{font-size:13px;color:var(--mute);margin-top:2px}
+.row .grow{flex:1;min-width:0}
+
+/* Tick box. The whole 44px square is the tap target. */
+.tick{
+  flex:none;width:44px;height:44px;margin:0;padding:0;
+  display:grid;place-items:center;
+  background:none;border:0;cursor:pointer;color:inherit;
+}
+.tick i{
+  width:26px;height:26px;border-radius:8px;
+  border:2px solid var(--line);background:var(--panel2);
+  display:grid;place-items:center;transition:background .12s,border-color .12s;
+}
+.tick i::after{
+  content:"";width:13px;height:7px;margin-top:-3px;
+  border-left:2.5px solid var(--bg);border-bottom:2.5px solid var(--bg);
+  transform:rotate(-45deg) scale(.5);opacity:0;transition:opacity .12s,transform .12s;
+}
+.tick[aria-pressed="true"] i{background:var(--good);border-color:var(--good)}
+.tick[aria-pressed="true"] i::after{opacity:1;transform:rotate(-45deg) scale(1)}
+.tick:active i{transform:scale(.92)}
+.done .name{color:var(--mute)}
+
+.chev{
+  flex:none;width:44px;height:44px;display:grid;place-items:center;
+  background:none;border:0;color:var(--mute);cursor:pointer;
+}
+.chev::after{
+  content:"";width:9px;height:9px;
+  border-top:2px solid currentColor;border-right:2px solid currentColor;
+  transform:rotate(45deg) translate(-2px,2px);
+}
+
+/* ---------------------------------------------------------------- buttons */
+
+button,input,select,textarea{font:inherit;font-family:inherit;color:inherit}
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:8px;
+  min-height:48px;padding:12px 18px;
+  background:var(--accent);color:#fff;border:0;border-radius:10px;
+  font-weight:650;font-size:15px;cursor:pointer;
+}
+.btn:active{transform:translateY(1px)}
+.btn.ghost{background:transparent;color:var(--accent);border:1px solid var(--line)}
+.btn.quiet{background:var(--panel2);color:var(--ink);border:1px solid var(--line)}
+.btn.wide{width:100%}
+.btn[disabled]{opacity:.5;cursor:default}
+.btn-row{display:flex;gap:10px;flex-wrap:wrap}
+
+/* ---------------------------------------------------------------- fields */
+
+label.lbl{
+  display:block;font-size:12px;color:var(--mute);
+  text-transform:uppercase;letter-spacing:.06em;font-weight:650;margin:0 0 6px;
+}
+input[type=text],input[type=number],input[type=time],input[type=password],textarea,select{
+  width:100%;min-height:48px;
+  background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+  padding:11px 13px;font-size:16px; /* 16px stops Android zooming on focus */
+}
+textarea{min-height:96px;resize:vertical;line-height:1.5}
+input:focus,textarea:focus,select:focus{outline:2px solid var(--accent);outline-offset:-1px}
+input[type=number]{-moz-appearance:textfield}
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.field-row{display:flex;gap:10px;align-items:flex-end}
+.field-row .grow{flex:1;min-width:0}
+
+/* ---------------------------------------------------------------- totals */
+
+.totals{display:flex;gap:18px;margin-bottom:12px}
+.total{flex:1}
+.total .n{font-size:22px;font-weight:650;letter-spacing:-.02em;line-height:1.2}
+.total .n span{font-size:14px;font-weight:500;color:var(--mute)}
+.total .k{font-size:12px;color:var(--mute);text-transform:uppercase;letter-spacing:.06em;font-weight:650;margin-top:2px}
+.bar{height:6px;border-radius:99px;background:var(--panel2);overflow:hidden;margin-top:9px}
+.bar>i{display:block;height:100%;border-radius:99px;background:var(--accent);transition:width .2s}
+.bar.good>i{background:var(--good)}
+
+/* ---------------------------------------------------------------- session */
+
+.session{display:flex;align-items:center;gap:14px}
+.session .grow{flex:1;min-width:0}
+.session .name{font-size:18px;font-weight:650;letter-spacing:-.01em}
+
+.note{
+  border-left:3px solid var(--warn);background:var(--panel2);
+  padding:12px 14px;border-radius:0 10px 10px 0;margin:12px 0;font-size:14px;
+}
+.empty{text-align:center;color:var(--mute);padding:34px 16px;font-size:14.5px}
+
+/* ---------------------------------------------------------------- tab bar */
+
+.tabbar{
+  position:fixed;left:0;right:0;bottom:0;z-index:30;
+  display:grid;grid-template-columns:repeat(5,1fr);
+  background:var(--bg);
+  background:color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter:blur(12px);
+  border-top:1px solid var(--line);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.tabbar a{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  min-height:var(--tabbar);
+  color:var(--mute);text-decoration:none;font-size:11px;font-weight:600;
+}
+.tabbar a svg{width:23px;height:23px;stroke:currentColor;fill:none;stroke-width:1.9;
+  stroke-linecap:round;stroke-linejoin:round}
+.tabbar a[aria-current="page"]{color:var(--accent)}
+.tabbar a:active{background:var(--panel2)}

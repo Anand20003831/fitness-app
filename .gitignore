@@ -1,0 +1,21 @@
+# Nothing here is built, so there is nothing to ignore from a build.
+# This file exists to make sure the things that must never be committed
+# cannot be committed by accident.
+
+# The personal access token lives in localStorage on each device only.
+*.token
+.env
+.env.*
+token.txt
+secrets.json
+
+# The briefing documents contain his weight, age and measurements.
+# This repo is public. They stay out of it.
+BUILD-BRIEF.md
+6-week-plan.*
+weekly-check-in.*
+
+# OS noise
+Thumbs.db
+desktop.ini
+.DS_Store
