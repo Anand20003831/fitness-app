@@ -62,6 +62,26 @@ export function sundayOf(key) {
   return addDays(mondayOf(key), 6);
 }
 
+// ---------------------------------------------------------------- change events
+//
+// Declared before the state below, because seeding the settings on a first run
+// writes, and writing notifies these. A const declared further down the file is
+// in the temporal dead zone at that point and the whole module throws, which
+// breaks the app on exactly one device: a brand new one.
+
+const listeners = new Set();
+
+export function onChange(fn) {
+  listeners.add(fn);
+  return () => listeners.delete(fn);
+}
+
+function emit() {
+  for (const fn of listeners) {
+    try { fn(); } catch (err) { console.error(err); }
+  }
+}
+
 // ---------------------------------------------------------------- state
 
 export const state = load();
@@ -96,20 +116,7 @@ function seedSettings() {
   if (changed) persist({ dirty: false });
 }
 
-// ---------------------------------------------------------------- change events
-
-const listeners = new Set();
-
-export function onChange(fn) {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
-}
-
-function emit() {
-  for (const fn of listeners) {
-    try { fn(); } catch (err) { console.error(err); }
-  }
-}
+// ---------------------------------------------------------------- sync flags
 
 export function isDirty() {
   return localStorage.getItem(LS_DIRTY) === '1';

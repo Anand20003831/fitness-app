@@ -85,9 +85,13 @@ try {
     }
     catch {
       # A timed-out speculative connection is normal, not worth printing.
-      if ($_.Exception.InnerException -isnot [System.Net.Sockets.SocketException]) {
-        Write-Host "error: $($_.Exception.Message)"
+      $ex = $_.Exception
+      $timedOut = $false
+      while ($ex) {
+        if ($ex -is [System.Net.Sockets.SocketException]) { $timedOut = $true; break }
+        $ex = $ex.InnerException
       }
+      if (-not $timedOut) { Write-Host "error: $($_.Exception.Message)" }
     }
     finally { $client.Close() }
   }
