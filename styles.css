@@ -245,6 +245,15 @@ select{
 }
 .timerpill.go{color:var(--good);border-color:var(--good)}
 
+/* ---------------------------------------------------------------- settings */
+
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:15px}
+.testresult{margin-top:14px;font-size:14.5px;line-height:1.5;display:none}
+.testresult.working,.testresult.ok,.testresult.bad{display:block}
+.testresult.working{color:var(--mute)}
+.testresult.ok{color:var(--good)}
+.testresult.bad{color:var(--warn)}
+
 /* ---------------------------------------------------------------- tab bar */
 
 .tabbar{

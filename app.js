@@ -2,10 +2,11 @@
 
 import { SESSIONS, WEEK, REST, GOAL_DATE, mealsForDay, targetsForDay } from './plan.js';
 import {
-  state, getDay, patchDay, getSetting, setSetting,
+  state, onChange, getDay, patchDay, getSetting, setSetting,
   getWorkout, setWorkout, lastTimeFor,
   todayKey, dayOfWeek, daysBetween, formatLong, formatShort,
 } from './store.js';
+import * as sync from './sync.js';
 
 const view = document.getElementById('view');
 const tabbar = document.getElementById('tabbar');
@@ -37,9 +38,10 @@ function tick(on, action, extra = '') {
     data-action="${action}" ${extra}><i></i></button>`;
 }
 
-export function setSyncState(stateName, text) {
+function setSyncPill(stateName, text, title) {
   const pill = document.getElementById('syncpill');
   pill.dataset.state = stateName;
+  pill.title = title || '';
   document.getElementById('synctext').textContent = text;
 }
 
@@ -323,6 +325,71 @@ function renderTrain() {
     }).join('')}`;
 }
 
+// ---------------------------------------------------------------- settings
+
+const SYNC_LABELS = {
+  off: 'Local', pending: 'Syncing', synced: 'Synced', offline: 'Offline', error: 'Sync error',
+};
+
+function renderSettings() {
+  const config = sync.getConfig();
+  const print = sync.tokenFingerprint();
+  const { status, error } = sync.getStatus();
+
+  return `
+    <div class="hero"><h1>Settings</h1></div>
+
+    <div class="card">
+      <div class="card-head"><p class="card-title">Sync</p>
+        <span class="right">${esc(SYNC_LABELS[status] || status)}</span></div>
+
+      <label class="lbl" for="cfgOwner">GitHub username</label>
+      <input type="text" id="cfgOwner" data-cfg="owner" value="${esc(config.owner)}"
+        autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Anand20003831">
+
+      <label class="lbl" for="cfgRepo" style="margin-top:14px">Private data repo</label>
+      <input type="text" id="cfgRepo" data-cfg="repo" value="${esc(config.repo)}"
+        autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="fitness-data">
+
+      <label class="lbl" for="cfgToken" style="margin-top:14px">Fine-grained token</label>
+      ${print ? `
+        <div class="row" style="min-height:52px">
+          <div class="grow">
+            <div class="name mono">${esc(print.prefix)}…${esc(print.last4)}</div>
+            <div class="meta">${print.length} characters, stored on this device only</div>
+          </div>
+          <button class="btn quiet" type="button" data-action="replace-token">Replace</button>
+        </div>
+      ` : `
+        <input type="password" id="cfgToken" data-cfg="token" value=""
+          autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="github_pat_…">
+        <p class="small" style="margin:8px 0 0">Contents: Read and write, on ${esc(config.repo)} only.
+        Metadata: Read-only is added by GitHub automatically and is meant to be there.</p>
+      `}
+
+      <div class="btn-row" style="margin-top:16px">
+        <button class="btn" type="button" data-action="test-connection">Test connection</button>
+        <button class="btn quiet" type="button" data-action="force-sync">Sync now</button>
+      </div>
+      <div id="testResult" class="testresult"></div>
+      ${error ? `<div class="note" style="margin-top:14px">${esc(error)}</div>` : ''}
+    </div>
+
+    <div class="card">
+      <div class="card-head"><p class="card-title">Calendar</p></div>
+      <label class="lbl" for="cfgGoogle">Google OAuth client ID</label>
+      <input type="text" id="cfgGoogle" data-cfg="googleClientId" value="${esc(config.googleClientId)}"
+        autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="…apps.googleusercontent.com">
+      <p class="small" style="margin:8px 0 0">Optional. The app works fully without it.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><p class="card-title">Your data</p></div>
+      <button class="btn quiet wide" type="button" data-action="export-data">Export data.json</button>
+      <p class="small" style="margin:10px 0 0">A copy of everything the app holds, straight from this device.</p>
+    </div>`;
+}
+
 // ---------------------------------------------------------------- stubs
 // Built in the later steps of the build order.
 
@@ -337,7 +404,7 @@ const SCREENS = {
   meals: () => stub('Meals', 'Recipes, grams and the shopping list land here in step 6.'),
   train: renderTrain,
   log: () => stub('Log', 'Weight chart, measurements and the Sunday report land here in step 6.'),
-  settings: () => stub('Settings', 'Token, sync and calendar settings land here in step 5.'),
+  settings: renderSettings,
 };
 
 // ---------------------------------------------------------------- routing
@@ -516,6 +583,52 @@ view.addEventListener('click', (event) => {
       break;
     }
 
+    case 'replace-token':
+      sync.setConfig({ token: '' });
+      render();
+      document.getElementById('cfgToken')?.focus();
+      break;
+
+    case 'test-connection': {
+      const out = document.getElementById('testResult');
+      out.className = 'testresult working';
+      out.textContent = 'Checking…';
+      el.disabled = true;
+      sync.testConnection().then((result) => {
+        el.disabled = false;
+        out.className = 'testresult ' + (result.ok ? 'ok' : 'bad');
+        out.textContent = result.message;
+      });
+      break;
+    }
+
+    case 'force-sync': {
+      const out = document.getElementById('testResult');
+      out.className = 'testresult working';
+      out.textContent = 'Syncing…';
+      sync.flushNow().then((result) => {
+        out.className = 'testresult ' + (result.ok ? 'ok' : 'bad');
+        out.textContent = result.ok
+          ? 'Synced.'
+          : (result.message || 'Could not sync.');
+        if (result.ok) render();
+      });
+      break;
+    }
+
+    case 'export-data': {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `data-${todayKey()}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      break;
+    }
+
     case 'save-start-weight': {
       const input = document.getElementById('startWeight');
       const value = Number(input.value.trim());
@@ -553,6 +666,15 @@ view.addEventListener('change', (event) => {
     return;
   }
 
+  if (el.dataset.cfg) {
+    const value = el.value.trim();
+    sync.setConfig({ [el.dataset.cfg]: value });
+    // Re-render only once a token has just been entered, so it collapses to its
+    // fingerprint. Re-rendering on every keystroke would fight the keyboard.
+    if (el.dataset.cfg === 'token' && value) render();
+    return;
+  }
+
   // A set input commits where it stands without re-rendering, so the keyboard
   // stays up while he moves from kg to reps.
   if (el.dataset.setField) {
@@ -587,7 +709,29 @@ document.addEventListener('visibilitychange', () => {
   }
 });
 
+// The header pill follows sync, and a pull that actually changed something
+// repaints the screen underneath him.
+sync.onStatus((status, error) => {
+  setSyncPill(
+    status === 'off' ? 'offline' : status,
+    SYNC_LABELS[status] || status,
+    error || '',
+  );
+  if (currentTab() === 'settings') render();
+});
+
+let lastPaintedData = null;
+onChange(() => {
+  const serialised = JSON.stringify(state);
+  if (serialised === lastPaintedData) return;
+  lastPaintedData = serialised;
+  // Never yank the screen out from under a field he is typing in.
+  if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
+  render();
+});
+
 render();
+sync.start();
 
 // Kept for the console: `window.fitness.state`.
-window.fitness = { state, render };
+window.fitness = { state, render, sync };
