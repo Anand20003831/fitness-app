@@ -1,12 +1,13 @@
 // Entry point: routing and rendering.
 
-import { SESSIONS, WEEK, REST, GOAL_DATE, mealsForDay, targetsForDay } from './plan.js';
+import { SESSIONS, WEEK, REST, SHOPPING, GOAL_DATE, mealsForDay, targetsForDay } from './plan.js';
 import {
-  state, onChange, getDay, patchDay, getSetting, setSetting,
+  state, onChange, getDay, patchDay, getSetting, setSetting, patchMeasure,
   getWorkout, setWorkout, lastTimeFor,
-  todayKey, dayOfWeek, daysBetween, formatLong, formatShort,
+  todayKey, dayOfWeek, daysBetween, addDays, formatLong, formatShort,
 } from './store.js';
 import * as sync from './sync.js';
+import * as report from './report.js';
 
 const view = document.getElementById('view');
 const tabbar = document.getElementById('tabbar');
@@ -31,6 +32,29 @@ function num(n) {
 function dayMonth(key) {
   return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'long', timeZone: 'UTC' })
     .format(new Date(key + 'T12:00:00Z'));
+}
+
+// The async clipboard needs a secure context and a user gesture. Pages is https
+// so it normally works, but the old execCommand path stays as a fallback rather
+// than leaving him staring at a report he cannot copy.
+async function copyText(text) {
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+      return true;
+    }
+  } catch {
+    // fall through
+  }
+  try {
+    const box = document.getElementById('reportText');
+    if (!box) return false;
+    box.focus();
+    box.select();
+    return document.execCommand('copy');
+  } catch {
+    return false;
+  }
 }
 
 function tick(on, action, extra = '') {
@@ -325,6 +349,219 @@ function renderTrain() {
     }).join('')}`;
 }
 
+// ---------------------------------------------------------------- meals
+
+function mostRecentSunday(key) {
+  const dow = dayOfWeek(key);
+  return dow === 0 ? key : addDays(key, -dow);
+}
+
+function renderMeals() {
+  const key = todayKey();
+  const meals = mealsForDay(dayOfWeek(key));
+  const open = (location.hash.split('/')[1] || '');
+  const day = getDay(key) || {};
+  const ticked = day.meals || {};
+
+  const shopping = getSetting('shopping', null) || { weekStart: null, checked: [] };
+  const sunday = mostRecentSunday(key);
+  // Cleared every Sunday: anything ticked before this week's Sunday is stale.
+  const checked = shopping.weekStart === sunday ? shopping.checked : [];
+
+  return `
+    <div class="hero">
+      <h1>Meals</h1>
+      <p class="sub">Same four every day. No decisions.</p>
+    </div>
+
+    ${meals.map((meal) => {
+      const isOpen = open === meal.id;
+      return `
+        <div class="card meal${isOpen ? ' open' : ''}" id="meal-${meal.id}">
+          <button class="mealhead" type="button" data-action="toggle-meal-open" data-meal="${meal.id}"
+            aria-expanded="${isOpen ? 'true' : 'false'}">
+            <span class="grow">
+              <span class="name">${esc(meal.name)}</span>
+              <span class="meta">${meal.kcal} kcal · ${meal.protein} g protein</span>
+            </span>
+            <span class="caret"></span>
+          </button>
+          ${isOpen ? `
+            <div class="mealbody">
+              <p class="card-title">Ingredients</p>
+              <ul class="ings">${meal.ingredients.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>
+              <p class="card-title">Method</p>
+              <ol class="steps">${meal.steps.map((s) => `<li>${esc(s)}</li>`).join('')}</ol>
+              <button class="btn ${ticked[meal.id] ? 'quiet' : ''} wide" type="button"
+                data-action="toggle-meal" data-meal="${meal.id}">
+                ${ticked[meal.id] ? 'Ticked off today' : 'Tick it off'}
+              </button>
+            </div>` : ''}
+        </div>`;
+    }).join('')}
+
+    <h2 class="section">Weekly shop</h2>
+    <div class="card">
+      ${SHOPPING.map(([item, qty], i) => {
+        const on = checked.includes(String(i));
+        return `
+          <div class="row${on ? ' done' : ''}">
+            ${tick(on, 'toggle-shopping', `data-item="${i}"`)}
+            <div class="grow">
+              <div class="name">${esc(item)}</div>
+              <div class="meta">${esc(qty)}</div>
+            </div>
+          </div>`;
+      }).join('')}
+      <p class="small" style="margin:14px 0 0">Clears itself every Sunday.</p>
+    </div>`;
+}
+
+// ---------------------------------------------------------------- log
+
+function weightSeries() {
+  return Object.keys(state.days)
+    .filter((k) => typeof state.days[k].weight === 'number')
+    .sort()
+    .map((k) => ({ date: k, weight: state.days[k].weight }));
+}
+
+function rollingAverage(series, window = 7) {
+  return series.map((point, i) => {
+    const slice = series.slice(Math.max(0, i - window + 1), i + 1);
+    return { date: point.date, value: slice.reduce((a, b) => a + b.weight, 0) / slice.length };
+  });
+}
+
+// Drawn by hand. One line chart does not justify a charting library, and a
+// library would be a build step.
+function weightChart(series) {
+  if (series.length < 2) {
+    return `<p class="empty">Two weigh-ins and the chart appears. ${series.length} so far.</p>`;
+  }
+
+  const width = 320;
+  const height = 170;
+  const pad = { top: 12, right: 8, bottom: 22, left: 32 };
+  const average = rollingAverage(series);
+
+  const values = series.map((p) => p.weight).concat(average.map((p) => p.value));
+  let min = Math.min(...values);
+  let max = Math.max(...values);
+  if (max - min < 1) { min -= 0.5; max += 0.5; }
+  const padding = (max - min) * 0.12;
+  min -= padding; max += padding;
+
+  const x = (i) => pad.left + (i / (series.length - 1)) * (width - pad.left - pad.right);
+  const y = (v) => pad.top + (1 - (v - min) / (max - min)) * (height - pad.top - pad.bottom);
+
+  const dailyPoints = series.map((p, i) => `${x(i).toFixed(1)},${y(p.weight).toFixed(1)}`).join(' ');
+  const avgPoints = average.map((p, i) => `${x(i).toFixed(1)},${y(p.value).toFixed(1)}`).join(' ');
+
+  const ticks = [min + (max - min) * 0.1, (min + max) / 2, max - (max - min) * 0.1];
+
+  return `
+    <svg class="chart" viewBox="0 0 ${width} ${height}" role="img"
+      aria-label="Daily weight with the seven day rolling average">
+      ${ticks.map((t) => `
+        <line x1="${pad.left}" y1="${y(t).toFixed(1)}" x2="${width - pad.right}" y2="${y(t).toFixed(1)}"
+          class="grid"/>
+        <text x="4" y="${(y(t) + 3.5).toFixed(1)}" class="axis">${t.toFixed(1)}</text>`).join('')}
+      <polyline class="daily" points="${dailyPoints}"/>
+      ${series.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.weight).toFixed(1)}" r="1.7" class="dot"/>`).join('')}
+      <polyline class="avg" points="${avgPoints}"/>
+      <text x="${pad.left}" y="${height - 6}" class="axis">${esc(formatShort(series[0].date))}</text>
+      <text x="${width - pad.right}" y="${height - 6}" class="axis" text-anchor="end">${esc(formatShort(series[series.length - 1].date))}</text>
+    </svg>`;
+}
+
+function renderLog() {
+  const key = todayKey();
+  const series = weightSeries();
+  const data = report.gather(key);
+
+  const measureDates = Object.keys(state.measures).sort().reverse();
+
+  return `
+    <div class="hero">
+      <h1>Log</h1>
+      <p class="sub">The rolling average is the one that means anything.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><p class="card-title">Weight</p>
+        <span class="right">${series.length} weigh-in${series.length === 1 ? '' : 's'}</span></div>
+      ${weightChart(series)}
+      <div class="legend">
+        <span><i class="swatch avg"></i>7-day average</span>
+        <span><i class="swatch daily"></i>daily</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="totals">
+        <div class="total">
+          <div class="n">${data.average !== null ? data.average.toFixed(2) : '—'} <span>kg</span></div>
+          <div class="k">this week</div>
+        </div>
+        <div class="total">
+          <div class="n">${data.lastAverage !== null ? data.lastAverage.toFixed(2) : '—'} <span>kg</span></div>
+          <div class="k">last week</div>
+        </div>
+        <div class="total">
+          <div class="n ${data.average !== null && data.lastAverage !== null ? (data.average - data.lastAverage <= 0 ? 'good' : 'warn') : ''}">
+            ${data.average !== null && data.lastAverage !== null
+              ? (data.average - data.lastAverage > 0 ? '+' : '') + (data.average - data.lastAverage).toFixed(2)
+              : '—'}
+          </div>
+          <div class="k">change</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><p class="card-title">Measurements</p></div>
+      <div class="field-row">
+        <div class="grow">
+          <label class="lbl" for="waist">Waist, cm</label>
+          <input type="number" id="waist" inputmode="decimal" step="0.5" data-measure="waist"
+            value="${esc(state.measures[key] && state.measures[key].waist != null ? state.measures[key].waist : '')}">
+        </div>
+        <div class="grow">
+          <label class="lbl" for="shoulders">Shoulders, cm</label>
+          <input type="number" id="shoulders" inputmode="decimal" step="0.5" data-measure="shoulders"
+            value="${esc(state.measures[key] && state.measures[key].shoulders != null ? state.measures[key].shoulders : '')}">
+        </div>
+      </div>
+      <p class="small" style="margin:10px 0 0">Waist on Sunday, shoulders every two weeks. Saved against today.</p>
+      ${measureDates.length ? `
+        <div style="margin-top:8px">
+          ${measureDates.slice(0, 8).map((d) => {
+            const m = state.measures[d];
+            const bits = [];
+            if (m.waist != null) bits.push(`waist ${m.waist} cm`);
+            if (m.shoulders != null) bits.push(`shoulders ${m.shoulders} cm`);
+            if (!bits.length) return '';
+            return `<div class="row"><div class="grow"><div class="name">${esc(formatShort(d))}</div>
+              <div class="meta">${esc(bits.join(' · '))}</div></div></div>`;
+          }).join('')}
+        </div>` : ''}
+    </div>
+
+    <div class="card">
+      <div class="card-head"><p class="card-title">Sunday report</p></div>
+      <p class="small" style="margin:0 0 12px">Filled in from your log. Sleep, food and notes are a draft,
+      edit them before you copy: they are the parts only you know.</p>
+      <div class="btn-row">
+        <button class="btn" type="button" data-action="build-report">Build the report</button>
+        <button class="btn quiet" type="button" data-action="copy-report">Copy it</button>
+      </div>
+      <div id="copyResult" class="testresult"></div>
+      <textarea id="reportText" class="mono" style="margin-top:14px;min-height:340px"
+        placeholder="Tap build and it fills itself in."></textarea>
+    </div>`;
+}
+
 // ---------------------------------------------------------------- settings
 
 const SYNC_LABELS = {
@@ -401,9 +638,9 @@ function stub(title, whatItWillDo) {
 
 const SCREENS = {
   today: renderToday,
-  meals: () => stub('Meals', 'Recipes, grams and the shopping list land here in step 6.'),
+  meals: renderMeals,
   train: renderTrain,
-  log: () => stub('Log', 'Weight chart, measurements and the Sunday report land here in step 6.'),
+  log: renderLog,
   settings: renderSettings,
 };
 
@@ -583,6 +820,43 @@ view.addEventListener('click', (event) => {
       break;
     }
 
+    case 'toggle-meal-open': {
+      const id = el.dataset.meal;
+      const open = (location.hash.split('/')[1] || '');
+      location.hash = open === id ? '#meals' : `#meals/${id}`;
+      break;
+    }
+
+    case 'toggle-shopping': {
+      const index = String(el.dataset.item);
+      const sunday = mostRecentSunday(key);
+      const current = getSetting('shopping', null) || { weekStart: null, checked: [] };
+      const checked = current.weekStart === sunday ? current.checked.slice() : [];
+      const at = checked.indexOf(index);
+      if (at === -1) checked.push(index); else checked.splice(at, 1);
+      setSetting('shopping', { weekStart: sunday, checked });
+      render();
+      break;
+    }
+
+    case 'build-report':
+      document.getElementById('reportText').value = report.draft(key);
+      break;
+
+    case 'copy-report': {
+      const box = document.getElementById('reportText');
+      const out = document.getElementById('copyResult');
+      if (!box.value) box.value = report.draft(key);
+      copyText(box.value).then((ok) => {
+        out.className = 'testresult ' + (ok ? 'ok' : 'bad');
+        out.textContent = ok
+          ? 'Copied. Paste it to Claude.'
+          : 'Could not reach the clipboard. The text is selected, copy it by hand.';
+        if (!ok) { box.focus(); box.select(); }
+      });
+      break;
+    }
+
     case 'replace-token':
       sync.setConfig({ token: '' });
       render();
@@ -663,6 +937,12 @@ view.addEventListener('change', (event) => {
   if (el.dataset.action === 'pick-session') {
     ui.sessionOverride = el.value;
     render();
+    return;
+  }
+
+  if (el.dataset.measure) {
+    const value = el.value.trim();
+    patchMeasure(todayKey(), { [el.dataset.measure]: value === '' ? null : Number(value) });
     return;
   }
 

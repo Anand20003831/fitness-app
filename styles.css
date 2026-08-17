@@ -245,6 +245,53 @@ select{
 }
 .timerpill.go{color:var(--good);border-color:var(--good)}
 
+/* ---------------------------------------------------------------- meals */
+
+.meal{padding:0;overflow:hidden}
+.mealhead{
+  display:flex;align-items:center;gap:12px;width:100%;
+  min-height:64px;padding:14px 16px;
+  background:none;border:0;text-align:left;cursor:pointer;color:inherit;
+}
+.mealhead .grow{flex:1;min-width:0;display:block}
+.mealhead .name{display:block;font-weight:600;font-size:16px;line-height:1.3}
+.mealhead .meta{display:block;font-size:13px;color:var(--mute);margin-top:2px}
+.caret{
+  flex:none;width:11px;height:11px;
+  border-right:2px solid var(--mute);border-bottom:2px solid var(--mute);
+  transform:rotate(45deg) translate(-2px,-2px);transition:transform .15s;
+}
+.meal.open .caret{transform:rotate(-135deg) translate(-3px,-3px)}
+.mealbody{padding:0 16px 16px}
+.mealbody .card-title{margin:14px 0 8px}
+.ings,.steps{margin:0;padding-left:20px}
+.ings li,.steps li{margin:6px 0;line-height:1.5}
+.ings{list-style:disc}
+.steps li{padding-left:2px}
+.mealbody .btn{margin-top:18px}
+
+/* ---------------------------------------------------------------- chart */
+
+.chart{width:100%;height:auto;display:block;overflow:visible}
+.chart .grid{stroke:var(--line);stroke-width:1}
+.chart .axis{fill:var(--mute);font-size:8px;font-family:inherit}
+.chart .daily{fill:none;stroke:var(--mute);stroke-width:1.2;opacity:.55;
+  stroke-linejoin:round;stroke-linecap:round}
+.chart .dot{fill:var(--mute);opacity:.55}
+/* The rolling average is the number that means anything, so it is the line
+   that reads first: thicker, accent coloured, drawn on top. */
+.chart .avg{fill:none;stroke:var(--accent);stroke-width:2.6;
+  stroke-linejoin:round;stroke-linecap:round}
+
+.legend{display:flex;gap:16px;margin-top:10px;font-size:12.5px;color:var(--mute)}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.swatch{width:14px;height:3px;border-radius:2px;display:inline-block}
+.swatch.avg{background:var(--accent);height:3px}
+.swatch.daily{background:var(--mute);opacity:.55;height:2px}
+
+.total .n.good{color:var(--good)}
+.total .n.warn{color:var(--warn)}
+
 /* ---------------------------------------------------------------- settings */
 
 .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:15px}
