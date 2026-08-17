@@ -53,7 +53,7 @@ export const MEALS = [
     steps: [
       'Stir the whey through the yoghurt until smooth. Add a splash of water if it stiffens up.',
       'Top with strawberries.',
-      'No seeds. He does not like gritty bits and they are not needed.',
+      'No seeds, they are not needed.',
     ],
   },
   {
