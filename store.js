@@ -177,6 +177,20 @@ export function setWorkout(key, workout) {
   persist();
 }
 
+// The most recent completed sets for an exercise, ignoring today. Exercise ids
+// repeat across sessions on purpose, so lateral raises on leg day still show
+// what he did on chest day. This is the number he is trying to beat.
+export function lastTimeFor(exerciseId, excludeKey) {
+  const keys = Object.keys(state.workouts).filter((k) => k !== excludeKey).sort().reverse();
+  for (const key of keys) {
+    const sets = state.workouts[key] && state.workouts[key].sets && state.workouts[key].sets[exerciseId];
+    if (!Array.isArray(sets)) continue;
+    const done = sets.filter((s) => s && s.done && Number(s.reps) > 0);
+    if (done.length) return { date: key, sets: done };
+  }
+  return null;
+}
+
 export function patchMeasure(key, patch) {
   const rec = state.measures[key] || (state.measures[key] = {});
   Object.assign(rec, patch);

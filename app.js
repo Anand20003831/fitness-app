@@ -1,9 +1,10 @@
 // Entry point: routing and rendering.
 
-import { SESSIONS, WEEK, GOAL_DATE, mealsForDay, targetsForDay } from './plan.js';
+import { SESSIONS, WEEK, REST, GOAL_DATE, mealsForDay, targetsForDay } from './plan.js';
 import {
   state, getDay, patchDay, getSetting, setSetting,
-  todayKey, dayOfWeek, daysBetween, formatLong,
+  getWorkout, setWorkout, lastTimeFor,
+  todayKey, dayOfWeek, daysBetween, formatLong, formatShort,
 } from './store.js';
 
 const view = document.getElementById('view');
@@ -12,7 +13,7 @@ const tabbar = document.getElementById('tabbar');
 const TABS = ['today', 'meals', 'train', 'log', 'settings'];
 
 // Transient screen state. Never persisted.
-const ui = { editWeight: false };
+const ui = { editWeight: false, sessionOverride: null };
 
 // ---------------------------------------------------------------- helpers
 
@@ -215,6 +216,113 @@ function renderWeigh(day) {
     </div>`;
 }
 
+// ---------------------------------------------------------------- train
+
+// Which session is on screen. Defaults to today's, and he can override it.
+function activeSessionId() {
+  if (ui.sessionOverride && SESSIONS[ui.sessionOverride]) return ui.sessionOverride;
+  const key = todayKey();
+  const stored = getWorkout(key);
+  if (stored && SESSIONS[stored.sessionId]) return stored.sessionId;
+  return WEEK[dayOfWeek(key)];
+}
+
+// The plan rests two to three minutes on the first two exercises and sixty to
+// ninety on the rest. The shirt session says sixty throughout, so it overrides.
+function restSeconds(sessionId, exerciseIndex) {
+  if (REST.bySession[sessionId] != null) return REST.bySession[sessionId];
+  return exerciseIndex < 2 ? REST.firstTwo : REST.rest;
+}
+
+function formatLastTime(entry) {
+  const weights = entry.sets.map((s) => (s.kg == null || s.kg === '' ? null : Number(s.kg)));
+  const uniform = weights.every((w) => w === weights[0]);
+  if (uniform) {
+    const label = weights[0] ? `${weights[0]}kg` : 'bodyweight';
+    return `${label} × ${entry.sets.map((s) => s.reps).join(', ')}`;
+  }
+  return entry.sets.map((s, i) => `${weights[i] ? weights[i] + 'kg' : 'BW'}×${s.reps}`).join(', ');
+}
+
+function setsFor(workout, exerciseId, prescribed) {
+  const stored = (workout && workout.sets && workout.sets[exerciseId]) || [];
+  const rows = stored.slice();
+  while (rows.length < prescribed) rows.push({ kg: '', reps: '', done: false });
+  return rows;
+}
+
+function renderTrain() {
+  const key = todayKey();
+  const sessionId = activeSessionId();
+  const session = sessionId ? SESSIONS[sessionId] : null;
+  const workout = getWorkout(key);
+
+  const picker = `
+    <div class="card">
+      <label class="lbl" for="sessionPick">Session</label>
+      <select id="sessionPick" data-action="pick-session">
+        ${Object.entries(SESSIONS).map(([id, s]) =>
+          `<option value="${id}"${id === sessionId ? ' selected' : ''}>${esc(s.name)}</option>`).join('')}
+      </select>
+    </div>`;
+
+  if (!session) {
+    return `
+      <div class="hero">
+        <h1>Train</h1>
+        <p class="sub">No session scheduled today. Walk-jog day.</p>
+      </div>
+      <div class="card"><p class="small" style="margin:0">Pick one below if you are training anyway.</p></div>
+      ${picker}`;
+  }
+
+  return `
+    <div class="hero">
+      <h1>${esc(session.name)}</h1>
+      <p class="sub">${esc(formatLong(key))}</p>
+    </div>
+    ${picker}
+    ${session.exercises.map((ex, index) => {
+      const last = lastTimeFor(ex.id, key);
+      const rows = setsFor(workout, ex.id, ex.sets);
+      return `
+        <div class="card ex">
+          <h3 class="ex-name">${esc(ex.name)}</h3>
+
+          <div class="lasttime${last ? '' : ' none'}">
+            ${last
+              ? `<span class="lasttime-label">Last time</span>
+                 <span class="lasttime-value">${esc(formatLastTime(last))}</span>
+                 <span class="lasttime-date">${esc(formatShort(last.date))}</span>`
+              : `<span class="lasttime-label">First time on this one</span>
+                 <span class="lasttime-value">no numbers yet</span>`}
+          </div>
+
+          <p class="prescribed">${ex.sets} × ${esc(ex.reps)}<span class="dot-sep">·</span>rest ${restSeconds(sessionId, index)}s</p>
+          <p class="exnote">${esc(ex.note)}</p>
+
+          <div class="sets">
+            ${rows.map((set, i) => `
+              <div class="setrow${set.done ? ' done' : ''}">
+                <span class="setnum">${i + 1}</span>
+                <input class="setinput" type="number" inputmode="decimal" step="0.5" min="0"
+                  data-set-field="kg" data-ex="${ex.id}" data-i="${i}"
+                  value="${esc(set.kg ?? '')}" placeholder="kg" aria-label="Set ${i + 1} weight in kg">
+                <span class="times">×</span>
+                <input class="setinput" type="number" inputmode="numeric" pattern="[0-9]*" min="0"
+                  data-set-field="reps" data-ex="${ex.id}" data-i="${i}"
+                  value="${esc(set.reps ?? '')}" placeholder="reps" aria-label="Set ${i + 1} reps">
+                <button class="setdone" type="button" aria-pressed="${set.done ? 'true' : 'false'}"
+                  aria-label="Set ${i + 1} done"
+                  data-action="set-done" data-ex="${ex.id}" data-i="${i}" data-index="${index}"><i></i></button>
+              </div>`).join('')}
+          </div>
+
+          <button class="btn quiet wide addset" type="button" data-action="add-set" data-ex="${ex.id}">Add a set</button>
+        </div>`;
+    }).join('')}`;
+}
+
 // ---------------------------------------------------------------- stubs
 // Built in the later steps of the build order.
 
@@ -227,7 +335,7 @@ function stub(title, whatItWillDo) {
 const SCREENS = {
   today: renderToday,
   meals: () => stub('Meals', 'Recipes, grams and the shopping list land here in step 6.'),
-  train: () => stub('Train', 'The set logger and last-time numbers land here in step 4.'),
+  train: renderTrain,
   log: () => stub('Log', 'Weight chart, measurements and the Sunday report land here in step 6.'),
   settings: () => stub('Settings', 'Token, sync and calendar settings land here in step 5.'),
 };
@@ -248,6 +356,107 @@ function render() {
   }
   document.title = tab === 'today' ? 'Fitness' : 'Fitness · ' + tab[0].toUpperCase() + tab.slice(1);
 }
+
+// ---------------------------------------------------------------- set logging
+
+// Reads the two inputs for one set straight off the DOM, so whatever is on
+// screen when he taps the tick is what gets stored. No hidden state.
+function writeSet(exerciseId, index, patch) {
+  const key = todayKey();
+  const sessionId = activeSessionId();
+  const existing = getWorkout(key);
+  const sets = JSON.parse(JSON.stringify((existing && existing.sets) || {}));
+  const rows = sets[exerciseId] || (sets[exerciseId] = []);
+  while (rows.length <= index) rows.push({ kg: '', reps: '', done: false });
+  rows[index] = { ...rows[index], ...patch };
+  setWorkout(key, { sessionId, sets });
+}
+
+function readSetInputs(exerciseId, index) {
+  const scope = `[data-ex="${exerciseId}"][data-i="${index}"]`;
+  const kg = document.querySelector(`input${scope}[data-set-field="kg"]`);
+  const reps = document.querySelector(`input${scope}[data-set-field="reps"]`);
+  return {
+    kg: kg && kg.value.trim() === '' ? '' : Number(kg.value),
+    reps: reps && reps.value.trim() === '' ? '' : Number(reps.value),
+  };
+}
+
+// ---------------------------------------------------------------- rest timer
+//
+// Driven off a wall-clock end time, not a decrementing counter, because Android
+// throttles timers in a backgrounded tab. Coming back to the app after locking
+// the phone shows the truth rather than a clock that stopped.
+
+const timer = { endsAt: 0, total: 0, tick: null, wakeLock: null, fired: false };
+const timerslot = document.getElementById('timerslot');
+
+async function acquireWakeLock() {
+  if (!('wakeLock' in navigator) || timer.wakeLock) return;
+  try {
+    timer.wakeLock = await navigator.wakeLock.request('screen');
+    timer.wakeLock.addEventListener('release', () => { timer.wakeLock = null; });
+  } catch {
+    // Denied or unsupported. The timer still works, the screen just sleeps.
+  }
+}
+
+function releaseWakeLock() {
+  if (timer.wakeLock) { timer.wakeLock.release().catch(() => {}); timer.wakeLock = null; }
+}
+
+function startRest(seconds) {
+  timer.total = seconds;
+  timer.endsAt = Date.now() + seconds * 1000;
+  timer.fired = false;
+  acquireWakeLock();
+  if (!timer.tick) timer.tick = setInterval(paintTimer, 250);
+  paintTimer();
+}
+
+function stopRest() {
+  timer.endsAt = 0;
+  if (timer.tick) { clearInterval(timer.tick); timer.tick = null; }
+  releaseWakeLock();
+  timerslot.innerHTML = '';
+}
+
+function paintTimer() {
+  if (!timer.endsAt) return;
+  const left = Math.max(0, timer.endsAt - Date.now());
+  const secs = Math.ceil(left / 1000);
+
+  if (left <= 0) {
+    if (!timer.fired) {
+      timer.fired = true;
+      // Android will not vibrate for a backgrounded page. If the screen is off
+      // this is silent, which is why the wake lock above exists.
+      if (navigator.vibrate) navigator.vibrate([220, 120, 220]);
+    }
+    timerslot.innerHTML = `<button class="pill timerpill go" type="button" data-action="stop-rest">Go</button>`;
+    releaseWakeLock();
+    return;
+  }
+
+  const mm = Math.floor(secs / 60);
+  const ss = String(secs % 60).padStart(2, '0');
+  timerslot.innerHTML =
+    `<button class="pill timerpill" type="button" data-action="stop-rest">${mm}:${ss}</button>`;
+}
+
+// The timer element lives in the header, outside #view, so it needs its own
+// listener rather than the delegated one below.
+timerslot.addEventListener('click', (event) => {
+  if (event.target.closest('[data-action="stop-rest"]')) stopRest();
+});
+
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    if (timer.endsAt) { acquireWakeLock(); paintTimer(); }
+  } else {
+    releaseWakeLock();
+  }
+});
 
 // ---------------------------------------------------------------- events
 
@@ -286,6 +495,27 @@ view.addEventListener('click', (event) => {
       saveWeight();
       break;
 
+    case 'set-done': {
+      const { ex, i, index } = el.dataset;
+      const wasDone = el.getAttribute('aria-pressed') === 'true';
+      const values = readSetInputs(ex, Number(i));
+      writeSet(ex, Number(i), { ...values, done: !wasDone });
+      if (!wasDone) startRest(restSeconds(activeSessionId(), Number(index)));
+      render();
+      break;
+    }
+
+    case 'add-set': {
+      const exerciseId = el.dataset.ex;
+      const workout = getWorkout(todayKey());
+      const rows = (workout && workout.sets && workout.sets[exerciseId]) || [];
+      const session = SESSIONS[activeSessionId()];
+      const prescribed = session.exercises.find((e) => e.id === exerciseId).sets;
+      writeSet(exerciseId, Math.max(rows.length, prescribed), { kg: '', reps: '', done: false });
+      render();
+      break;
+    }
+
     case 'save-start-weight': {
       const input = document.getElementById('startWeight');
       const value = Number(input.value.trim());
@@ -316,6 +546,21 @@ function saveWeight() {
 view.addEventListener('change', (event) => {
   const el = event.target;
   if (el.id === 'weight') { saveWeight(); return; }
+
+  if (el.dataset.action === 'pick-session') {
+    ui.sessionOverride = el.value;
+    render();
+    return;
+  }
+
+  // A set input commits where it stands without re-rendering, so the keyboard
+  // stays up while he moves from kg to reps.
+  if (el.dataset.setField) {
+    const value = el.value.trim() === '' ? '' : Number(el.value);
+    writeSet(el.dataset.ex, Number(el.dataset.i), { [el.dataset.setField]: value });
+    return;
+  }
+
   const field = el.dataset && el.dataset.field;
   if (!field) return;
   patchDay(todayKey(), { [field]: el.value.trim() });
