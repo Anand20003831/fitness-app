@@ -733,5 +733,14 @@ onChange(() => {
 render();
 sync.start();
 
+// Registered after first paint so it never delays the app opening.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js', { scope: './' }).catch((err) => {
+      console.warn('Service worker did not register. The app still works, just not offline.', err);
+    });
+  });
+}
+
 // Kept for the console: `window.fitness.state`.
 window.fitness = { state, render, sync };
