@@ -1,8 +1,6 @@
 // Local state. This layer never touches the network.
 // sync.js sits on top of it and pushes the same shape to the private repo.
 
-import { DEFAULT_SETTINGS } from './plan.js';
-
 const LS_KEY = 'fitness.data.v1';
 const LS_DIRTY = 'fitness.dirty.v1';
 
@@ -84,8 +82,9 @@ function emit() {
 
 // ---------------------------------------------------------------- state
 
+// Settings are not seeded with defaults here. Anything that is a fact about him
+// arrives from data.json in the private repo, or he is asked for it.
 export const state = load();
-seedSettings();
 
 function load() {
   try {
@@ -106,14 +105,6 @@ function normalise(obj) {
     if (obj[k] && typeof obj[k] === 'object') base[k] = obj[k];
   }
   return base;
-}
-
-function seedSettings() {
-  let changed = false;
-  for (const [k, v] of Object.entries(DEFAULT_SETTINGS)) {
-    if (state.settings[k] === undefined) { state.settings[k] = v; changed = true; }
-  }
-  if (changed) persist({ dirty: false });
 }
 
 // ---------------------------------------------------------------- sync flags

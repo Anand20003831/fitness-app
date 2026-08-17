@@ -1,8 +1,15 @@
 // The whole plan lives in this file.
 // Change a meal, a target, an exercise or a rest time here and the app follows.
 // Nothing else needs editing.
+//
+// This repo is public. Everything in this file comes off the plan. Nothing in
+// it came off him: no body weight, no measurements, no age, no name. Those
+// live in data.json in the private repo and the app reads them from there.
 
-export const TARGETS = { kcal: 2034, protein: 176, fat: 50, carbs: 215, saturdayKcal: 2400 };
+export const TARGETS = {
+  kcal: 2034, protein: 176, fat: 50, carbs: 215,
+  saturdayKcal: 2429, saturdayProtein: 184,
+};
 
 export const MEALS = [
   {
@@ -126,15 +133,35 @@ export const SHOPPING = [
   ['Creatine monohydrate', '35 g'],
 ];
 
-// Saturday runs at TARGETS.saturdayKcal instead of TARGETS.kcal.
-// These three items are what the plan says to add. They carry no calorie
-// figures anywhere in the plan, so the app does not invent any: it shows the
-// higher target and treats the gap as the extras.
-export const SATURDAY_EXTRAS = [
-  '150 g extra rice with lunch',
-  'A second slice of toast at breakfast',
-  'An extra banana',
-];
+// Saturday is a higher day: TARGETS.saturdayKcal and saturdayProtein instead
+// of the weekday pair. The extras are a real fifth meal with real figures, so
+// the day adds up the same way every other day does.
+// 2034 + 395 = 2429 kcal. 176 + 8 = 184 g protein.
+export const SATURDAY_MEAL = {
+  id: 'extras', name: 'Saturday extras', kcal: 395, protein: 8,
+  ingredients: [
+    '150 g cooked rice, 195 kcal, 3 g protein',
+    '1 slice wholemeal bread, 95 kcal, 4 g protein',
+    '1 banana, 105 kcal, 1 g protein',
+  ],
+  steps: [
+    'The extra rice goes in the lunch box.',
+    'The extra slice of bread goes with breakfast.',
+    'The banana whenever it suits.',
+    'Not a cheat day and not a write-off, just a higher day. Six days hard and one easier beats seven days of grinding.',
+  ],
+};
+
+// Saturday is day 6.
+export function mealsForDay(dayOfWeek) {
+  return dayOfWeek === 6 ? [...MEALS, SATURDAY_MEAL] : MEALS;
+}
+
+export function targetsForDay(dayOfWeek) {
+  return dayOfWeek === 6
+    ? { kcal: TARGETS.saturdayKcal, protein: TARGETS.saturdayProtein }
+    : { kcal: TARGETS.kcal, protein: TARGETS.protein };
+}
 
 // Rest timer, seconds. The plan says two to three minutes on the first two
 // exercises of a session and sixty to ninety on the rest. The shirt session
@@ -145,5 +172,8 @@ export const REST = {
   bySession: { shirt: 60 },
 };
 
-// Seeded into data.json settings on first run.
-export const DEFAULT_SETTINGS = { startWeight: 77, goalDate: '2026-09-25' };
+// The end of the block. This is a date off the plan, not a fact about him.
+// startWeight deliberately has no default here. It is seeded into data.json in
+// the private repo, and if it is missing the app asks for it rather than
+// carrying his weight around in a public file.
+export const GOAL_DATE = '2026-09-25';

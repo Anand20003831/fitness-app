@@ -1,8 +1,8 @@
 // Entry point: routing and rendering.
 
-import { MEALS, SESSIONS, WEEK, TARGETS, SATURDAY_EXTRAS } from './plan.js';
+import { SESSIONS, WEEK, GOAL_DATE, mealsForDay, targetsForDay } from './plan.js';
 import {
-  state, getDay, patchDay, getSetting,
+  state, getDay, patchDay, getSetting, setSetting,
   todayKey, dayOfWeek, daysBetween, formatLong,
 } from './store.js';
 
@@ -51,8 +51,10 @@ function renderToday() {
   const sessionId = WEEK[dow];
   const session = sessionId ? SESSIONS[sessionId] : null;
   const isSaturday = dow === 6;
+  const todaysMeals = mealsForDay(dow);
+  const targets = targetsForDay(dow);
 
-  const goalDate = getSetting('goalDate', '2026-09-25');
+  const goalDate = getSetting('goalDate', GOAL_DATE);
   const left = daysBetween(key, goalDate);
   const countdown = left > 0
     ? `<span class="countdown">${left} day${left === 1 ? '' : 's'}</span> to ${dayMonth(goalDate)}`
@@ -61,9 +63,8 @@ function renderToday() {
       : `<span class="countdown">${-left} day${left === -1 ? '' : 's'}</span> past ${dayMonth(goalDate)}, still going`;
 
   const meals = day.meals || {};
-  const kcalTarget = isSaturday ? TARGETS.saturdayKcal : TARGETS.kcal;
   let kcal = 0, protein = 0;
-  for (const meal of MEALS) {
+  for (const meal of todaysMeals) {
     if (meals[meal.id]) { kcal += meal.kcal; protein += meal.protein; }
   }
 
@@ -73,6 +74,7 @@ function renderToday() {
       <p class="sub">${countdown}</p>
     </div>
 
+    ${renderStartWeight()}
     ${renderWeigh(day)}
 
     <div class="card">
@@ -104,18 +106,18 @@ function renderToday() {
     <div class="card">
       <div class="totals">
         <div class="total">
-          <div class="n">${num(kcal)} <span>/ ${num(kcalTarget)}</span></div>
+          <div class="n">${num(kcal)} <span>/ ${num(targets.kcal)}</span></div>
           <div class="k">kcal</div>
-          <div class="bar"><i style="width:${Math.min(100, kcal / kcalTarget * 100)}%"></i></div>
+          <div class="bar"><i style="width:${Math.min(100, kcal / targets.kcal * 100)}%"></i></div>
         </div>
         <div class="total">
-          <div class="n">${protein} <span>/ ${TARGETS.protein}</span></div>
+          <div class="n">${protein} <span>/ ${targets.protein}</span></div>
           <div class="k">g protein</div>
-          <div class="bar${protein >= TARGETS.protein ? ' good' : ''}"><i style="width:${Math.min(100, protein / TARGETS.protein * 100)}%"></i></div>
+          <div class="bar${protein >= targets.protein ? ' good' : ''}"><i style="width:${Math.min(100, protein / targets.protein * 100)}%"></i></div>
         </div>
       </div>
 
-      ${MEALS.map((meal) => {
+      ${todaysMeals.map((meal) => {
         const on = !!meals[meal.id];
         return `
           <div class="row${on ? ' done' : ''}">
@@ -130,16 +132,8 @@ function renderToday() {
       }).join('')}
 
       ${isSaturday ? `
-        <div class="row${meals.extras ? ' done' : ''}">
-          ${tick(!!meals.extras, 'toggle-meal', 'data-meal="extras"')}
-          <div class="grow">
-            <div class="name">Saturday extras</div>
-            <div class="meta">${esc(SATURDAY_EXTRAS.join(' · '))}</div>
-          </div>
-        </div>
-        <p class="small" style="margin:12px 0 0">Saturday runs at ${num(TARGETS.saturdayKcal)}.
-        The four meals cover ${num(TARGETS.kcal)}; the extras are the other ${num(TARGETS.saturdayKcal - TARGETS.kcal)},
-        which is why they are not counted separately.</p>
+        <p class="small" style="margin:12px 0 0">Saturday is the higher day.
+        Not a cheat day, just ${num(targets.kcal)} instead of ${num(targetsForDay(1).kcal)}.</p>
       ` : ''}
     </div>
 
@@ -172,6 +166,26 @@ function renderToday() {
       </div>
     </div>
   `;
+}
+
+// Asked for once, on a device that has never seen the private data. It is not
+// defaulted anywhere in this repo, because this repo is public and his starting
+// weight is his.
+function renderStartWeight() {
+  if (getSetting('startWeight', null) != null) return '';
+  return `
+    <div class="card">
+      <label class="lbl" for="startWeight">Starting weight</label>
+      <div class="field-row">
+        <div class="grow">
+          <input type="number" id="startWeight" inputmode="decimal" step="0.1" min="30" max="300"
+            placeholder="kg, where you began">
+        </div>
+        <button class="btn" type="button" data-action="save-start-weight">Save</button>
+      </div>
+      <p class="small" style="margin:10px 0 0">Asked once. It is stored in your private data repo,
+      never in the app's code. If you have already set it on another device it will arrive on the next sync.</p>
+    </div>`;
 }
 
 function renderWeigh(day) {
@@ -271,6 +285,15 @@ view.addEventListener('click', (event) => {
     case 'save-weight':
       saveWeight();
       break;
+
+    case 'save-start-weight': {
+      const input = document.getElementById('startWeight');
+      const value = Number(input.value.trim());
+      if (!Number.isFinite(value) || value <= 0) { input.focus(); return; }
+      setSetting('startWeight', value);
+      render();
+      break;
+    }
   }
 });
 
