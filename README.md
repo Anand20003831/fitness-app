@@ -113,9 +113,104 @@ count, rep range and coaching note; which session falls on which day; the
 shopping list; rest times; the daily targets. Edit that one file, commit, push,
 and the whole app follows. Nothing else needs touching.
 
+You can also edit it from inside the app without touching this file at all, see
+[Editing the plan yourself](#editing-the-plan-yourself-and-talking-to-claude-about-it).
+Those edits sit on top of this file rather than replacing it, so changes here
+still reach anything you have not personally overridden.
+
 Saturday is a higher day and works by the same mechanism: `TARGETS.saturdayKcal`
 and `saturdayProtein`, plus `SATURDAY_MEAL`, which is a real fifth meal shown
 only on Saturdays so the day still adds up exactly.
+
+## Editing the plan yourself, and talking to Claude about it
+
+The Coach tab does two jobs. There is no API key anywhere in this app and there
+never will be: a key is a spendable credential and this site is public. It is a
+copy and paste bridge instead.
+
+### Your edits never freeze the plan
+
+Edits are stored as a **sparse patch** in `settings.planPatch`, keyed by id, and
+layered over `plan.js` when the app reads it. Only the fields actually changed
+are stored. Everything untouched is read live from `plan.js`.
+
+That means both of these are true at once:
+
+- Rewrite a coaching note and it stays yours, even if `plan.js` later changes
+  that same note.
+- Leave an exercise alone and a later improvement to it in `plan.js` reaches
+  you, rather than being frozen at whatever it said the day you first edited
+  something else.
+
+Writing a value identical to `plan.js` is treated as no edit at all, so it
+cannot silently pin that field. Anything overridden is marked **edited**, and
+every item has a reset. Resetting the last override removes the patch entirely.
+
+### Copy context for Claude
+
+Builds a plain text block, roughly 2,500 characters: the effective plan after
+your edits, the last 14 days of weights with the weekly averages, four weeks of
+waist and shoulder measurements, recent sessions with the actual sets, and
+adherence. Paste it into a chat and ask for what you want changed.
+
+### Apply changes from Claude
+
+Paste the JSON block back. It is validated, shown as a plain-English list of
+exactly what will change, and applied only when you confirm. One level of undo.
+Bad input is rejected with a specific reason, never silently ignored.
+
+There is a **Copy the schema** button next to the paste box, so you never have
+to come and find this. The format:
+
+```
+{
+  "fitness-plan-patch": 1,
+
+  "targets": { "kcal": 2100, "protein": 180, "fat": 55, "carbs": 220,
+               "saturdayKcal": 2500, "saturdayProtein": 188 },
+
+  "meals": {
+    "breakfast": { "kcal": 620, "protein": 45, "name": "...",
+                   "ingredients": ["..."], "steps": ["..."] },
+    "lunch":     { "reset": true }
+  },
+
+  "sessions": {
+    "upperA": {
+      "name": "...",
+      "exercises": {
+        "chest-press": { "sets": 5, "reps": "6-10", "note": "..." },
+        "fly":         { "remove": true },
+        "cable-fly":   { "add": true, "name": "Cable fly",
+                         "sets": 3, "reps": "12-15", "note": "..." },
+        "lateral":     { "reset": true }
+      },
+      "order": ["chest-press", "db-ohp", "pulldown-narrow", "lateral", "tri-ext"]
+    }
+  }
+}
+```
+
+Every part is optional; send only what changes.
+
+- `"reset": true` drops your edits to that item and returns it to the default.
+- `"remove": true` drops an exercise from that session.
+- `"add": true` creates one, and needs `name`, `sets`, `reps` and `note`.
+- `"order"` is the full list of exercise ids for that session, in order.
+- Numbers must be numbers, not strings. `reps` is a string like `"8-12"`.
+- Meal ids: `breakfast`, `lunch`, `afternoon`, `dinner`, `extras`.
+- Session ids: `upperA`, `lowerA`, `shirt`, `upperB`, `lowerB`.
+
+## Appearance
+
+Settings, Appearance: theme (dark, light, or follow the system), five accent
+colours, and normal or large text. All three live in `settings` so they sync to
+both devices.
+
+**The strip at the top of the phone stays dark whatever you pick.** Its colour
+is compiled into the APK and cannot follow an in-app setting, so rather than
+have it match in the browser and look broken in the app, it is held dark
+everywhere and the light theme is designed to sit under it.
 
 ## How Claude reads the data
 
@@ -130,7 +225,7 @@ never UTC.
 days      weight, bedTime, wakeTime, meal ticks, walkjog, notes
 workouts  sessionId and every set as { kg, reps, done }
 measures  waist and shoulders
-settings  startWeight, goalDate, shopping list state
+settings  startWeight, goalDate, shopping list, appearance, planPatch
 ```
 
 Records carry `updatedAt`, and entries in `days` also carry `fieldsUpdatedAt`
@@ -156,9 +251,11 @@ committed, so nothing has to be built to serve the site.
 
 ```
 index.html              markup and the tab bar
-styles.css              all styling, dark by default, light via prefers-color-scheme
+styles.css              all styling. Themes key off data-theme on <html>.
 app.js                  routing and rendering
 plan.js                 the whole plan, the only file worth editing
+overlay.js              layers your edits over plan.js at read time
+coach.js                context out, patch in, schema and validation
 store.js                localStorage, London date handling, merge logic
 sync.js                 GitHub contents API
 report.js               the Sunday report builder

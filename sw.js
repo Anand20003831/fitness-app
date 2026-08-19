@@ -4,7 +4,7 @@
 // Bump CACHE when you change the files below. Old caches are deleted on
 // activate, so a stale version cannot survive an update.
 
-const CACHE = 'fitness-v3';
+const CACHE = 'fitness-v4';
 
 const SHELL = [
   './',
@@ -15,6 +15,8 @@ const SHELL = [
   './store.js',
   './sync.js',
   './report.js',
+  './overlay.js',
+  './coach.js',
   './calendar.js',
   './manifest.webmanifest',
   './icons/icon-192.png',

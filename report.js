@@ -10,7 +10,9 @@
 // are the parts only he knows.
 
 import { state, mondayOf, sundayOf, addDays, formatShort } from './store.js';
-import { SESSIONS, mealsForDay } from './plan.js';
+// The effective plan, not the file. If he has changed a meal or renamed an
+// exercise, the report has to talk about what he is actually doing.
+import { mealsForDay, exerciseNameFor } from './overlay.js';
 
 const SESSIONS_PER_WEEK = 5;
 
@@ -110,13 +112,7 @@ function bestSet(sets) {
   return best;
 }
 
-function exerciseName(id) {
-  for (const session of Object.values(SESSIONS)) {
-    const found = session.exercises.find((e) => e.id === id);
-    if (found) return found.name;
-  }
-  return id;
-}
+const exerciseName = exerciseNameFor;
 
 // Compares the best set of each exercise this week against the last time it
 // appeared before this week. Heavier wins; same weight for more reps counts too,

@@ -1,6 +1,15 @@
 // Entry point: routing and rendering.
 
-import { SESSIONS, WEEK, REST, SHOPPING, GOAL_DATE, mealsForDay, targetsForDay } from './plan.js';
+import { REST } from './plan.js';
+// Everything about the plan comes through the overlay, never straight from
+// plan.js, so his edits are visible on every screen that reads it.
+import {
+  WEEK, SHOPPING, GOAL_DATE, mealsForDay, targetsForDay,
+  effectiveSessions, effectiveSession, effectiveMeals, effectiveTargets,
+  mealOverrides, exerciseOverrides, targetOverridden, sessionStructureChanged, anyOverrides,
+  setTarget, setMealField, resetMeal, setExerciseField, resetExercise,
+  removeExercise, addExercise, moveExercise, resetSession, resetEverything,
+} from './overlay.js';
 import {
   state, onChange, getDay, patchDay, getSetting, setSetting, patchMeasure,
   getWorkout, setWorkout, lastTimeFor,
@@ -8,14 +17,24 @@ import {
 } from './store.js';
 import * as sync from './sync.js';
 import * as report from './report.js';
+import * as coach from './coach.js';
 
 const view = document.getElementById('view');
 const tabbar = document.getElementById('tabbar');
 
-const TABS = ['today', 'meals', 'train', 'log', 'settings'];
+const TABS = ['today', 'meals', 'train', 'log', 'coach', 'settings'];
 
 // Transient screen state. Never persisted.
-const ui = { editWeight: false, sessionOverride: null };
+const ui = { editWeight: false, sessionOverride: null, pendingPatch: null };
+
+// Small stable hash, only used to keep generated exercise ids from colliding.
+function hashString(text) {
+  let hash = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    hash = ((hash << 5) - hash + text.charCodeAt(i)) | 0;
+  }
+  return hash;
+}
 
 // ---------------------------------------------------------------- helpers
 
@@ -76,7 +95,7 @@ function renderToday() {
   const day = getDay(key) || {};
   const dow = dayOfWeek(key);
   const sessionId = WEEK[dow];
-  const session = sessionId ? SESSIONS[sessionId] : null;
+  const session = sessionId ? effectiveSession(sessionId) : null;
   const isSaturday = dow === 6;
   const todaysMeals = mealsForDay(dow);
   const targets = targetsForDay(dow);
@@ -246,10 +265,10 @@ function renderWeigh(day) {
 
 // Which session is on screen. Defaults to today's, and he can override it.
 function activeSessionId() {
-  if (ui.sessionOverride && SESSIONS[ui.sessionOverride]) return ui.sessionOverride;
+  if (ui.sessionOverride && effectiveSession(ui.sessionOverride)) return ui.sessionOverride;
   const key = todayKey();
   const stored = getWorkout(key);
-  if (stored && SESSIONS[stored.sessionId]) return stored.sessionId;
+  if (stored && effectiveSession(stored.sessionId)) return stored.sessionId;
   return WEEK[dayOfWeek(key)];
 }
 
@@ -280,14 +299,14 @@ function setsFor(workout, exerciseId, prescribed) {
 function renderTrain() {
   const key = todayKey();
   const sessionId = activeSessionId();
-  const session = sessionId ? SESSIONS[sessionId] : null;
+  const session = sessionId ? effectiveSession(sessionId) : null;
   const workout = getWorkout(key);
 
   const picker = `
     <div class="card">
       <label class="lbl" for="sessionPick">Session</label>
       <select id="sessionPick" data-action="pick-session">
-        ${Object.entries(SESSIONS).map(([id, s]) =>
+        ${Object.entries(effectiveSessions()).map(([id, s]) =>
           `<option value="${id}"${id === sessionId ? ' selected' : ''}>${esc(s.name)}</option>`).join('')}
       </select>
     </div>`;
@@ -562,6 +581,290 @@ function renderLog() {
     </div>`;
 }
 
+// ---------------------------------------------------------------- coach
+
+function coachRoute() {
+  const parts = (location.hash || '#coach').slice(1).split('/');
+  return { section: parts[1] || '', id: parts[2] || '' };
+}
+
+function editedBadge(count) {
+  return count ? `<span class="badge">edited</span>` : '';
+}
+
+function lines(value) {
+  return Array.isArray(value) ? value.join('\n') : '';
+}
+
+function renderCoach() {
+  const route = coachRoute();
+  if (route.section === 'targets') return renderTargetsEditor();
+  if (route.section === 'meal') return renderMealEditor(route.id);
+  if (route.section === 'session') return renderSessionEditor(route.id);
+  return renderCoachIndex();
+}
+
+function renderCoachIndex() {
+  const meals = effectiveMeals();
+  const sessions = effectiveSessions();
+  const targets = effectiveTargets();
+  const targetEdits = ['kcal', 'protein', 'fat', 'carbs', 'saturdayKcal', 'saturdayProtein']
+    .filter((f) => targetOverridden(f)).length;
+
+  return `
+    <div class="hero">
+      <h1>Coach</h1>
+      <p class="sub">Edit the plan, or take it to Claude and bring changes back.</p>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><p class="card-title">Talk to Claude</p></div>
+      <p class="small" style="margin:0 0 12px">Copies your plan and recent numbers as plain text.
+      Paste it into a chat and ask for whatever you want changed.</p>
+      <button class="btn wide" type="button" data-action="copy-context">Copy context for Claude</button>
+      <div id="contextResult" class="testresult"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-head"><p class="card-title">Apply changes from Claude</p></div>
+      <p class="small" style="margin:0 0 12px">Paste the JSON block Claude sends back. Nothing changes
+      until you have seen exactly what it does and confirmed.</p>
+      <div class="btn-row" style="margin-bottom:12px">
+        <button class="btn quiet small" type="button" data-action="copy-schema">Copy the schema</button>
+        ${coach.canUndo() ? `<button class="btn danger small" type="button" data-action="undo-patch">Undo last change</button>` : ''}
+      </div>
+      <textarea id="patchText" class="mono" placeholder='{ "fitness-plan-patch": 1, ... }'></textarea>
+      <div class="btn-row" style="margin-top:12px">
+        <button class="btn" type="button" data-action="check-patch">Check it</button>
+      </div>
+      <div id="patchResult" class="testresult"></div>
+      <div id="patchDiff"></div>
+    </div>
+
+    <h2 class="section">Edit the plan</h2>
+    ${anyOverrides() ? `
+      <div class="note">You have edits layered over the plan. Anything you have not
+      touched still follows the plan file, so improvements to the rest still reach you.</div>` : ''}
+
+    <div class="card tight">
+      <div class="row">
+        <div class="grow">
+          <div class="name">Targets${editedBadge(targetEdits)}</div>
+          <div class="meta">${num(targets.kcal)} kcal · ${targets.protein} g protein</div>
+        </div>
+        <button class="chev" type="button" data-action="goto" data-href="#coach/targets" aria-label="Edit targets"></button>
+      </div>
+    </div>
+
+    <div class="card tight">
+      ${meals.map((meal) => `
+        <div class="row">
+          <div class="grow">
+            <div class="name">${esc(meal.name)}${editedBadge(mealOverrides(meal.id).length)}</div>
+            <div class="meta">${meal.kcal} kcal · ${meal.protein} g protein</div>
+          </div>
+          <button class="chev" type="button" data-action="goto" data-href="#coach/meal/${meal.id}"
+            aria-label="Edit ${esc(meal.name)}"></button>
+        </div>`).join('')}
+    </div>
+
+    <div class="card tight">
+      ${Object.entries(sessions).map(([id, session]) => {
+        const edits = session.exercises.filter((e) => exerciseOverrides(id, e.id).length).length;
+        const changed = sessionStructureChanged(id) || edits > 0;
+        return `
+          <div class="row">
+            <div class="grow">
+              <div class="name">${esc(session.name)}${editedBadge(changed ? 1 : 0)}</div>
+              <div class="meta">${session.exercises.length} exercises</div>
+            </div>
+            <button class="chev" type="button" data-action="goto" data-href="#coach/session/${id}"
+              aria-label="Edit ${esc(session.name)}"></button>
+          </div>`;
+      }).join('')}
+    </div>
+
+    ${anyOverrides() ? `
+      <button class="btn danger wide" type="button" data-action="reset-everything">Reset the whole plan to default</button>
+    ` : ''}`;
+}
+
+function backLink() {
+  return `<button class="btn quiet small" type="button" data-action="goto" data-href="#coach">Back</button>`;
+}
+
+function renderTargetsEditor() {
+  const targets = effectiveTargets();
+  const fields = [
+    ['kcal', 'Daily calories'], ['protein', 'Daily protein, g'],
+    ['fat', 'Daily fat, g'], ['carbs', 'Daily carbs, g'],
+    ['saturdayKcal', 'Saturday calories'], ['saturdayProtein', 'Saturday protein, g'],
+  ];
+  return `
+    <div class="hero"><h1>Targets</h1></div>
+    ${backLink()}
+    <div class="card" style="margin-top:14px">
+      ${fields.map(([field, label]) => `
+        <div style="margin-bottom:16px">
+          <label class="lbl" for="t-${field}">${label}${editedBadge(targetOverridden(field) ? 1 : 0)}</label>
+          <div class="field-row">
+            <div class="grow">
+              <input type="number" id="t-${field}" inputmode="numeric" data-target="${field}"
+                value="${esc(targets[field])}">
+            </div>
+            ${targetOverridden(field)
+              ? `<button class="btn quiet small" type="button" data-action="reset-target" data-value="${field}">Reset</button>`
+              : ''}
+          </div>
+        </div>`).join('')}
+    </div>`;
+}
+
+function renderMealEditor(id) {
+  const meal = effectiveMeals().find((m) => m.id === id);
+  if (!meal) return renderCoachIndex();
+  const edits = mealOverrides(id);
+
+  return `
+    <div class="hero"><h1>${esc(meal.name)}</h1>
+      <p class="sub">${edits.length ? `You have changed: ${edits.join(', ')}` : 'Following the plan file'}</p></div>
+    ${backLink()}
+    <div class="card" style="margin-top:14px">
+      <label class="lbl" for="m-name">Name${editedBadge(edits.includes('name') ? 1 : 0)}</label>
+      <input type="text" id="m-name" data-meal-field="name" data-id="${id}" value="${esc(meal.name)}">
+
+      <div class="editgrid" style="margin-top:16px">
+        <div class="field">
+          <label class="lbl" for="m-kcal">kcal${editedBadge(edits.includes('kcal') ? 1 : 0)}</label>
+          <input type="number" id="m-kcal" inputmode="numeric" data-meal-field="kcal" data-id="${id}" value="${esc(meal.kcal)}">
+        </div>
+        <div class="field">
+          <label class="lbl" for="m-protein">protein, g${editedBadge(edits.includes('protein') ? 1 : 0)}</label>
+          <input type="number" id="m-protein" inputmode="numeric" data-meal-field="protein" data-id="${id}" value="${esc(meal.protein)}">
+        </div>
+      </div>
+
+      <label class="lbl" style="margin-top:6px" for="m-ings">Ingredients, one per line${editedBadge(edits.includes('ingredients') ? 1 : 0)}</label>
+      <textarea id="m-ings" data-meal-field="ingredients" data-id="${id}" style="min-height:140px">${esc(lines(meal.ingredients))}</textarea>
+
+      <label class="lbl" style="margin-top:16px" for="m-steps">Method, one step per line${editedBadge(edits.includes('steps') ? 1 : 0)}</label>
+      <textarea id="m-steps" data-meal-field="steps" data-id="${id}" style="min-height:180px">${esc(lines(meal.steps))}</textarea>
+
+      ${edits.length ? `
+        <button class="btn danger wide" style="margin-top:18px" type="button"
+          data-action="reset-meal" data-id="${id}">Reset this meal to default</button>` : ''}
+    </div>`;
+}
+
+function renderSessionEditor(sessionId) {
+  const session = effectiveSession(sessionId);
+  if (!session) return renderCoachIndex();
+
+  return `
+    <div class="hero"><h1>${esc(session.name)}</h1>
+      <p class="sub">${session.exercises.length} exercises</p></div>
+    ${backLink()}
+    <div class="card" style="margin-top:14px">
+      ${session.exercises.map((ex, index) => {
+        const edits = exerciseOverrides(sessionId, ex.id);
+        return `
+          <div class="exedit">
+            <div class="exedit-head">
+              <span class="name">${esc(ex.name)}${ex.isCustom ? '<span class="badge">added</span>' : editedBadge(edits.length)}</span>
+              <button class="iconbtn" type="button" data-action="move-ex" data-session="${sessionId}"
+                data-id="${ex.id}" data-delta="-1" aria-label="Move up"${index === 0 ? ' disabled' : ''}>↑</button>
+              <button class="iconbtn" type="button" data-action="move-ex" data-session="${sessionId}"
+                data-id="${ex.id}" data-delta="1" aria-label="Move down"${index === session.exercises.length - 1 ? ' disabled' : ''}>↓</button>
+              <button class="iconbtn danger" type="button" data-action="remove-ex" data-session="${sessionId}"
+                data-id="${ex.id}" aria-label="Remove">✕</button>
+            </div>
+            <div class="editgrid">
+              <div class="field">
+                <label class="lbl">sets</label>
+                <input type="number" inputmode="numeric" data-ex-field="sets"
+                  data-session="${sessionId}" data-id="${ex.id}" value="${esc(ex.sets)}">
+              </div>
+              <div class="field" style="flex:2">
+                <label class="lbl">reps</label>
+                <input type="text" data-ex-field="reps"
+                  data-session="${sessionId}" data-id="${ex.id}" value="${esc(ex.reps)}">
+              </div>
+            </div>
+            <label class="lbl">note</label>
+            <input type="text" data-ex-field="note" data-session="${sessionId}" data-id="${ex.id}"
+              value="${esc(ex.note)}">
+            ${edits.length && !ex.isCustom ? `
+              <button class="btn quiet small" style="margin-top:10px" type="button"
+                data-action="reset-ex" data-session="${sessionId}" data-id="${ex.id}">Reset this exercise</button>` : ''}
+          </div>`;
+      }).join('')}
+
+      <button class="btn quiet wide" style="margin-top:16px" type="button"
+        data-action="add-ex" data-session="${sessionId}">Add an exercise</button>
+
+      ${sessionStructureChanged(sessionId) || session.exercises.some((e) => exerciseOverrides(sessionId, e.id).length) ? `
+        <button class="btn danger wide" style="margin-top:10px" type="button"
+          data-action="reset-session" data-session="${sessionId}">Reset this session to default</button>` : ''}
+    </div>`;
+}
+
+// ---------------------------------------------------------------- appearance
+
+const THEMES = [['system', 'Follow system'], ['dark', 'Dark'], ['light', 'Light']];
+const ACCENTS = [
+  ['blue', 'Blue'], ['green', 'Green'], ['amber', 'Amber'],
+  ['violet', 'Violet'], ['coral', 'Coral'],
+];
+const TEXT_SIZES = [['normal', 'Normal'], ['large', 'Large']];
+
+// Lives in settings, so it syncs. Applied by setting attributes the stylesheet
+// keys off, which is the same thing the inline script in index.html does before
+// first paint.
+export function applyAppearance() {
+  const root = document.documentElement;
+  root.setAttribute('data-theme', getSetting('theme', 'system'));
+  root.setAttribute('data-accent', getSetting('accent', 'blue'));
+  root.setAttribute('data-textsize', getSetting('textSize', 'normal'));
+}
+
+function renderAppearance() {
+  const theme = getSetting('theme', 'system');
+  const accent = getSetting('accent', 'blue');
+  const textSize = getSetting('textSize', 'normal');
+
+  return `
+    <div class="card">
+      <div class="card-head"><p class="card-title">Appearance</p></div>
+
+      <label class="lbl">Theme</label>
+      <div class="choices">
+        ${THEMES.map(([id, label]) => `
+          <button class="choice" type="button" aria-pressed="${theme === id}"
+            data-action="set-theme" data-value="${id}">${label}</button>`).join('')}
+      </div>
+
+      <label class="lbl" style="margin-top:18px">Accent</label>
+      <div class="swatches">
+        ${ACCENTS.map(([id, label]) => `
+          <button class="swatchbtn" type="button" aria-pressed="${accent === id}"
+            data-action="set-accent" data-value="${id}" aria-label="${label}" title="${label}"
+            ><i style="background:var(--sw-${id})"></i></button>`).join('')}
+      </div>
+
+      <label class="lbl" style="margin-top:18px">Text size</label>
+      <div class="choices">
+        ${TEXT_SIZES.map(([id, label]) => `
+          <button class="choice" type="button" aria-pressed="${textSize === id}"
+            data-action="set-textsize" data-value="${id}">${label}</button>`).join('')}
+      </div>
+
+      <p class="small" style="margin:16px 0 0">The strip at the top of the phone stays dark
+      whichever theme you pick. Its colour is compiled into the app and cannot follow this
+      setting, so it is held dark everywhere rather than matching in the browser and looking
+      broken in the app.</p>
+    </div>`;
+}
+
 // ---------------------------------------------------------------- settings
 
 const SYNC_LABELS = {
@@ -620,6 +923,8 @@ function renderSettings() {
       <p class="small" style="margin:8px 0 0">Optional. The app works fully without it.</p>
     </div>
 
+    ${renderAppearance()}
+
     <div class="card">
       <div class="card-head"><p class="card-title">Your data</p></div>
       <button class="btn quiet wide" type="button" data-action="export-data">Export data.json</button>
@@ -641,6 +946,7 @@ const SCREENS = {
   meals: renderMeals,
   train: renderTrain,
   log: renderLog,
+  coach: renderCoach,
   settings: renderSettings,
 };
 
@@ -813,7 +1119,7 @@ view.addEventListener('click', (event) => {
       const exerciseId = el.dataset.ex;
       const workout = getWorkout(todayKey());
       const rows = (workout && workout.sets && workout.sets[exerciseId]) || [];
-      const session = SESSIONS[activeSessionId()];
+      const session = effectiveSession(activeSessionId());
       const prescribed = session.exercises.find((e) => e.id === exerciseId).sets;
       writeSet(exerciseId, Math.max(rows.length, prescribed), { kg: '', reps: '', done: false });
       render();
@@ -856,6 +1162,139 @@ view.addEventListener('click', (event) => {
       });
       break;
     }
+
+    case 'set-theme':
+    case 'set-accent':
+    case 'set-textsize': {
+      const field = { 'set-theme': 'theme', 'set-accent': 'accent', 'set-textsize': 'textSize' }[el.dataset.action];
+      setSetting(field, el.dataset.value);
+      applyAppearance();
+      render();
+      break;
+    }
+
+    case 'copy-context': {
+      const out = document.getElementById('contextResult');
+      const text = coach.buildContext(key);
+      copyText(text).then((ok) => {
+        out.className = 'testresult ' + (ok ? 'ok' : 'bad');
+        out.textContent = ok
+          ? `Copied, ${text.length} characters. Paste it into a chat with Claude.`
+          : 'Could not reach the clipboard.';
+      });
+      break;
+    }
+
+    case 'copy-schema': {
+      const out = document.getElementById('patchResult');
+      copyText(coach.SCHEMA_TEXT).then((ok) => {
+        out.className = 'testresult ' + (ok ? 'ok' : 'bad');
+        out.textContent = ok
+          ? 'Schema copied. Paste it to Claude along with the context.'
+          : 'Could not reach the clipboard.';
+      });
+      break;
+    }
+
+    case 'check-patch': {
+      const out = document.getElementById('patchResult');
+      const target = document.getElementById('patchDiff');
+      const result = coach.validate(document.getElementById('patchText').value);
+      if (!result.ok) {
+        out.className = 'testresult bad';
+        out.textContent = result.errors.length === 1
+          ? result.errors[0]
+          : `${result.errors.length} problems with that block:`;
+        target.innerHTML = result.errors.length > 1
+          ? `<ul class="difflist">${result.errors.map((e) => `<li class="remove">${esc(e)}</li>`).join('')}</ul>`
+          : '';
+        break;
+      }
+      const changes = coach.diff(result.patch);
+      if (!changes.length) {
+        out.className = 'testresult ok';
+        out.textContent = 'That block is valid, but nothing in it differs from your current plan.';
+        target.innerHTML = '';
+        break;
+      }
+      ui.pendingPatch = result.patch;
+      out.className = 'testresult ok';
+      out.textContent = `${changes.length} change${changes.length === 1 ? '' : 's'}:`;
+      target.innerHTML = `
+        <ul class="difflist">
+          ${changes.map((c) => `<li class="${c.kind}">${esc(c.text)}</li>`).join('')}
+        </ul>
+        <div class="btn-row" style="margin-top:12px">
+          <button class="btn" type="button" data-action="apply-patch">Apply these changes</button>
+          <button class="btn quiet" type="button" data-action="cancel-patch">Cancel</button>
+        </div>`;
+      break;
+    }
+
+    case 'apply-patch':
+      if (!ui.pendingPatch) break;
+      coach.apply(ui.pendingPatch);
+      ui.pendingPatch = null;
+      render();
+      break;
+
+    case 'cancel-patch':
+      ui.pendingPatch = null;
+      document.getElementById('patchDiff').innerHTML = '';
+      document.getElementById('patchResult').className = 'testresult';
+      break;
+
+    case 'undo-patch':
+      coach.undo();
+      render();
+      break;
+
+    case 'reset-target':
+      setTarget(el.dataset.value, null);
+      render();
+      break;
+
+    case 'reset-meal':
+      resetMeal(el.dataset.id);
+      render();
+      break;
+
+    case 'reset-ex':
+      resetExercise(el.dataset.session, el.dataset.id);
+      render();
+      break;
+
+    case 'remove-ex':
+      removeExercise(el.dataset.session, el.dataset.id);
+      render();
+      break;
+
+    case 'move-ex':
+      moveExercise(el.dataset.session, el.dataset.id, Number(el.dataset.delta));
+      render();
+      break;
+
+    case 'add-ex': {
+      const name = window.prompt('Name of the new exercise');
+      if (!name || !name.trim()) break;
+      const id = 'custom-' + name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+        + '-' + Math.abs(hashString(name + Date.now())).toString(36).slice(0, 4);
+      addExercise(el.dataset.session, { id, name: name.trim(), sets: 3, reps: '8-12', note: '' });
+      render();
+      break;
+    }
+
+    case 'reset-session':
+      resetSession(el.dataset.session);
+      render();
+      break;
+
+    case 'reset-everything':
+      if (window.confirm('Drop every edit you have made and go back to the plan as written?')) {
+        resetEverything();
+        render();
+      }
+      break;
 
     case 'replace-token':
       sync.setConfig({ token: '' });
@@ -940,6 +1379,34 @@ view.addEventListener('change', (event) => {
     return;
   }
 
+  // Plan edits commit on change without re-rendering, so the keyboard stays put
+  // while he moves between fields.
+  if (el.dataset.target) {
+    const value = el.value.trim();
+    setTarget(el.dataset.target, value === '' ? null : Number(value));
+    return;
+  }
+
+  if (el.dataset.mealField) {
+    const field = el.dataset.mealField;
+    const raw = el.value;
+    const value = (field === 'kcal' || field === 'protein')
+      ? (raw.trim() === '' ? null : Number(raw))
+      : (field === 'ingredients' || field === 'steps')
+        ? raw.split('\n').map((s) => s.trim()).filter(Boolean)
+        : raw.trim();
+    setMealField(el.dataset.id, field, value);
+    return;
+  }
+
+  if (el.dataset.exField) {
+    const field = el.dataset.exField;
+    const raw = el.value;
+    const value = field === 'sets' ? (raw.trim() === '' ? null : Number(raw)) : raw.trim();
+    setExerciseField(el.dataset.session, el.dataset.id, field, value);
+    return;
+  }
+
   if (el.dataset.measure) {
     const value = el.value.trim();
     patchMeasure(todayKey(), { [el.dataset.measure]: value === '' ? null : Number(value) });
@@ -1005,11 +1472,14 @@ onChange(() => {
   const serialised = JSON.stringify(state);
   if (serialised === lastPaintedData) return;
   lastPaintedData = serialised;
+  // Appearance is synced, so a change made on the other device lands here.
+  applyAppearance();
   // Never yank the screen out from under a field he is typing in.
   if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
   render();
 });
 
+applyAppearance();
 render();
 sync.start();
 
