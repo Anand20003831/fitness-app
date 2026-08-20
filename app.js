@@ -18,6 +18,7 @@ import {
 import * as sync from './sync.js';
 import * as report from './report.js';
 import * as coach from './coach.js';
+import * as calendar from './calendar.js';
 
 const view = document.getElementById('view');
 const tabbar = document.getElementById('tabbar');
@@ -123,9 +124,10 @@ function renderToday() {
     ${renderStartWeight()}
     ${renderWeigh(day)}
 
-    <div class="card">
-      <div class="card-head"><p class="card-title">Today's calendar</p></div>
-      <p class="small" style="margin:0">Calendar not connected. Add a Google client ID in Settings if you want your lectures and shifts here.</p>
+    <div class="card" id="calcard">
+      <div class="card-head"><p class="card-title">Today's calendar</p>
+        ${calendar.isConnected() ? '<span class="right"><button class="btn quiet small" type="button" data-action="cal-refresh">Refresh</button></span>' : ''}</div>
+      <div id="calbody">${renderCalendarBody()}</div>
     </div>
 
     <div class="card">
@@ -366,6 +368,59 @@ function renderTrain() {
           <button class="btn quiet wide addset" type="button" data-action="add-set" data-ex="${ex.id}">Add a set</button>
         </div>`;
     }).join('')}`;
+}
+
+// ---------------------------------------------------------------- calendar
+//
+// Rendered synchronously from whatever is already known, then refreshed in the
+// background. The Today tab never waits on Google.
+
+let calState = { state: 'idle', events: [], message: '' };
+
+function renderCalendarBody() {
+  if (!calendar.isConfigured()) {
+    return `<p class="small" style="margin:0">Calendar not connected. Add a Google client ID in
+      Settings if you want your lectures and shifts here.</p>`;
+  }
+  if (!calendar.isConnected() && calState.state !== 'ok') {
+    return `<p class="small" style="margin:0 0 12px">Not signed in to Google on this device.</p>
+      <button class="btn quiet wide" type="button" data-action="cal-connect">Connect Google Calendar</button>`;
+  }
+  if (calState.state === 'loading') {
+    return `<p class="small" style="margin:0">Checking…</p>`;
+  }
+  if (calState.state === 'error' || calState.state === 'offline') {
+    return `<p class="small" style="margin:0">${esc(calState.message || 'Could not reach Google. Today still works.')}</p>`;
+  }
+  if (!calState.events.length) {
+    return `<p class="small" style="margin:0">Nothing in the diary today.</p>`;
+  }
+  return calState.events.map((event) => `
+    <div class="row">
+      <div class="grow">
+        <div class="name">${esc(event.summary)}</div>
+        <div class="meta">${event.allDay
+          ? 'All day'
+          : `${esc(calendar.formatTime(event.start))}–${esc(calendar.formatTime(event.end))}`}${
+          event.location ? ' · ' + esc(event.location) : ''}</div>
+      </div>
+    </div>`).join('');
+}
+
+// Repaints just the calendar card, so a slow network cannot make the rest of
+// Today flicker or lose an input he is typing in.
+function paintCalendar() {
+  const body = document.getElementById('calbody');
+  if (body) body.innerHTML = renderCalendarBody();
+}
+
+async function refreshCalendar({ force = false } = {}) {
+  if (!calendar.isConfigured() || !calendar.isConnected()) return;
+  calState = { ...calState, state: 'loading' };
+  paintCalendar();
+  const result = await calendar.todayEvents(todayKey(), { force });
+  calState = { state: result.state, events: result.events || [], message: result.message || '' };
+  paintCalendar();
 }
 
 // ---------------------------------------------------------------- meals
@@ -920,7 +975,12 @@ function renderSettings() {
       <label class="lbl" for="cfgGoogle">Google OAuth client ID</label>
       <input type="text" id="cfgGoogle" data-cfg="googleClientId" value="${esc(config.googleClientId)}"
         autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="…apps.googleusercontent.com">
-      <p class="small" style="margin:8px 0 0">Optional. The app works fully without it.</p>
+      <p class="small" style="margin:8px 0 0">Optional. The app works fully without it.
+      The origin to authorise in Google Cloud is
+      <code>https://anand20003831.github.io</code> with no path and no trailing slash.</p>
+      ${calendar.isConnected() ? `
+        <button class="btn quiet wide" style="margin-top:14px" type="button"
+          data-action="cal-disconnect">Disconnect Google Calendar</button>` : ''}
     </div>
 
     ${renderAppearance()}
@@ -1162,6 +1222,31 @@ view.addEventListener('click', (event) => {
       });
       break;
     }
+
+    case 'cal-connect': {
+      el.disabled = true;
+      calendar.connect().then((result) => {
+        if (result.ok) {
+          refreshCalendar({ force: true });
+          render();
+        } else {
+          calState = { state: 'error', events: [], message: result.message };
+          el.disabled = false;
+          paintCalendar();
+        }
+      });
+      break;
+    }
+
+    case 'cal-refresh':
+      refreshCalendar({ force: true });
+      break;
+
+    case 'cal-disconnect':
+      calendar.disconnect();
+      calState = { state: 'idle', events: [], message: '' };
+      render();
+      break;
 
     case 'set-theme':
     case 'set-accent':
@@ -1482,6 +1567,7 @@ onChange(() => {
 applyAppearance();
 render();
 sync.start();
+refreshCalendar();
 
 // Registered after first paint so it never delays the app opening.
 if ('serviceWorker' in navigator) {
