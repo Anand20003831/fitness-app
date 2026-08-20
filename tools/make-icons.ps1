@@ -2,19 +2,36 @@
 # The app itself has no build step; this is a one-off drawing tool, and its
 # output is committed so nothing has to be built to serve the site.
 #
-#   powershell -ExecutionPolicy Bypass -File tools/make-icons.ps1
+#   powershell -ExecutionPolicy Bypass -File tools/make-icons.ps1 -Accent neon
+#
+# Accents: blue, green, amber, violet, coral, neon
 
-$ErrorActionPreference = 'Stop'
+param([string]$Accent = "neon")
+
+$ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Drawing
 
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Definition)
 $outDir = Join-Path $root 'icons'
 if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir | Out-Null }
 
-# Matches the app: purple-tinted near-black ground, violet to pink glyph.
-$bg     = [System.Drawing.ColorTranslator]::FromHtml('#0e0b18')
-$gradA  = [System.Drawing.ColorTranslator]::FromHtml('#8b5cf6')
-$gradB  = [System.Drawing.ColorTranslator]::FromHtml('#ec4899')
+# Matches the app. The gradient pairs are the same ones styles.css uses per
+# accent, so the launcher icon can be built to match whichever accent he runs.
+# Android bakes this into the APK, so changing accent in the app cannot change
+# it; rebuilding with -Accent can.
+$pairs = @{
+  blue   = @("#6ea8fe", "#b78bfa")
+  green  = @("#5ec98a", "#6ee7d0")
+  amber  = @("#e8b34a", "#f97362")
+  violet = @("#b18cf0", "#f472b6")
+  coral  = @("#f2887a", "#f0a8d8")
+  neon   = @("#8b5cf6", "#ec4899")
+}
+if (-not $pairs.ContainsKey($Accent)) { throw "Unknown accent '$Accent'. One of: $($pairs.Keys -join ', ')" }
+"accent: $Accent"
+$bg     = [System.Drawing.ColorTranslator]::FromHtml("#0e0b18")
+$gradA  = [System.Drawing.ColorTranslator]::FromHtml($pairs[$Accent][0])
+$gradB  = [System.Drawing.ColorTranslator]::FromHtml($pairs[$Accent][1])
 
 function New-RoundedPath {
   param([single]$X, [single]$Y, [single]$W, [single]$H, [single]$R)

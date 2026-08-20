@@ -1261,6 +1261,40 @@ const MOTION = [['on', 'On'], ['off', 'Off']];
 // Lives in settings, so it syncs. Applied by setting attributes the stylesheet
 // keys off, which is the same thing the inline script in index.html does before
 // first paint.
+// The launcher icon on Android is compiled into the APK and cannot be changed
+// from here: a Trusted Web Activity has no bridge from the web content to the
+// Android side. The browser tab icon is a different matter, and that one can
+// follow the accent, so it does. Same dumbbell, drawn as an SVG data URI from
+// whatever the gradient tokens currently resolve to.
+function paintFavicon() {
+  const cs = getComputedStyle(document.documentElement);
+  const from = cs.getPropertyValue('--grad-from').trim() || '#6ea8fe';
+  const to = cs.getPropertyValue('--grad-to').trim() || '#b78bfa';
+  const bg = cs.getPropertyValue('--chrome').trim() || '#0e0b18';
+
+  const bar = (x, y, w, h, r) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${r}" fill="url(#g)"/>`;
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">`
+    + `<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">`
+    + `<stop offset="0" stop-color="${from}"/><stop offset="1" stop-color="${to}"/>`
+    + `</linearGradient></defs>`
+    + `<rect width="64" height="64" rx="14" fill="${bg}"/>`
+    + bar(16.3, 29.6, 31.4, 4.8, 2.4)
+    + bar(15.7, 21.4, 5.4, 21.1, 1.9)
+    + bar(42.9, 21.4, 5.4, 21.1, 1.9)
+    + bar(10.2, 25.3, 3.8, 13.4, 1.5)
+    + bar(49.9, 25.3, 3.8, 13.4, 1.5)
+    + `</svg>`;
+
+  let link = document.querySelector('link[rel="icon"]');
+  if (!link) {
+    link = document.createElement('link');
+    link.rel = 'icon';
+    document.head.appendChild(link);
+  }
+  link.type = 'image/svg+xml';
+  link.href = 'data:image/svg+xml,' + encodeURIComponent(svg);
+}
+
 export function applyAppearance() {
   const root = document.documentElement;
   root.setAttribute('data-theme', getSetting('theme', 'system'));
@@ -1269,6 +1303,7 @@ export function applyAppearance() {
   root.setAttribute('data-surface', getSetting('surface', 'glass'));
   root.setAttribute('data-blobs', getSetting('blobs', 'on'));
   root.setAttribute('data-motion', getSetting('motion', 'on'));
+  paintFavicon();
 }
 function renderAppearance() {
   const theme = getSetting('theme', 'system');
