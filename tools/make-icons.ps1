@@ -11,8 +11,10 @@ $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Definitio
 $outDir = Join-Path $root 'icons'
 if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir | Out-Null }
 
-$bg   = [System.Drawing.ColorTranslator]::FromHtml('#0f1115')
-$ink  = [System.Drawing.ColorTranslator]::FromHtml('#e8ecf1')
+# Matches the app: purple-tinted near-black ground, violet to pink glyph.
+$bg     = [System.Drawing.ColorTranslator]::FromHtml('#0e0b18')
+$gradA  = [System.Drawing.ColorTranslator]::FromHtml('#8b5cf6')
+$gradB  = [System.Drawing.ColorTranslator]::FromHtml('#ec4899')
 
 function New-RoundedPath {
   param([single]$X, [single]$Y, [single]$W, [single]$H, [single]$R)
@@ -27,7 +29,6 @@ function New-RoundedPath {
   return $path
 }
 
-# A barbell: centre bar, a thick plate each side, a thinner collar outside it.
 function Draw-Icon {
   param([int]$Size, [string]$Path, [double]$GlyphScale = 1.0, [bool]$FullBleed = $false)
 
@@ -45,19 +46,24 @@ function Draw-Icon {
     $square.Dispose()
   }
 
-  $inkBrush = New-Object System.Drawing.SolidBrush($ink)
+  # A soft glow behind the glyph, echoing the background blobs in the app.
+  $glowRect = New-Object System.Drawing.Rectangle(0, 0, $Size, $Size)
+  $glow = New-Object System.Drawing.Drawing2D.LinearGradientBrush(
+    $glowRect, [System.Drawing.Color]::FromArgb(46, $gradB), [System.Drawing.Color]::FromArgb(0, $gradB), 45.0)
+  $g.FillRectangle($glow, $glowRect)
+  $glow.Dispose()
+
   $s = [single]($Size * $GlyphScale)
   $ox = [single](($Size - $s) / 2)
   $oy = [single](($Size - $s) / 2)
-  $mid = [single]($oy + $s / 2)
+
+  $glyphRect = New-Object System.Drawing.RectangleF($ox, $oy, $s, $s)
+  $inkBrush = New-Object System.Drawing.Drawing2D.LinearGradientBrush($glyphRect, $gradA, $gradB, 20.0)
 
   $shapes = @(
-    # bar
     @{ x = 0.255; y = 0.4625; w = 0.49;  h = 0.075; r = 0.037 },
-    # inner plates
     @{ x = 0.245; y = 0.335;  w = 0.085; h = 0.330; r = 0.030 },
     @{ x = 0.670; y = 0.335;  w = 0.085; h = 0.330; r = 0.030 },
-    # outer collars
     @{ x = 0.160; y = 0.395;  w = 0.060; h = 0.210; r = 0.024 },
     @{ x = 0.780; y = 0.395;  w = 0.060; h = 0.210; r = 0.024 }
   )
@@ -71,6 +77,7 @@ function Draw-Icon {
     $g.FillPath($inkBrush, $shapePath)
     $shapePath.Dispose()
   }
+  $inkBrush.Dispose()
 
   $g.Dispose()
   $bmp.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
