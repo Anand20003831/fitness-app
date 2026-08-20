@@ -225,7 +225,7 @@ never UTC.
 days      weight, bedTime, wakeTime, meal ticks, walkjog, notes
 workouts  sessionId and every set as { kg, reps, done }
 measures  waist and shoulders
-settings  startWeight, goalDate, shopping list, appearance, planPatch
+settings  startWeight, goalDate, shopping, appearance, planPatch, googleClientId
 ```
 
 Records carry `updatedAt`, and entries in `days` also carry `fieldsUpdatedAt`

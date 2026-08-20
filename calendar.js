@@ -8,7 +8,7 @@
 // the Today tab, never an error and never a blocked render. The app has to be
 // completely usable by someone who never sets this up.
 
-import { local } from './store.js';
+import { local, getSetting } from './store.js';
 
 const GIS_SRC = 'https://accounts.google.com/gsi/client';
 const SCOPE = 'https://www.googleapis.com/auth/calendar.readonly';
@@ -18,7 +18,7 @@ let gisPromise = null;
 let tokenClient = null;
 
 export function clientId() {
-  return local('googleClientId') || '';
+  return getSetting('googleClientId', '') || '';
 }
 
 export function isConfigured() {

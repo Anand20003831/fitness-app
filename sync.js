@@ -5,7 +5,7 @@
 // set to read and write. It lives in localStorage on each device and is never
 // written to a file, never committed and never sent anywhere except api.github.com.
 
-import { snapshot, mergeRemote, isDirty, markClean, local, onChange } from './store.js';
+import { snapshot, mergeRemote, isDirty, markClean, local, onChange, getSetting, setSetting } from './store.js';
 
 const API = 'https://api.github.com';
 const FILE = 'data.json';
@@ -27,13 +27,18 @@ export function getConfig() {
     owner: local('owner') || '',
     repo: local('repo') || 'fitness-data',
     token: local('token') || '',
-    googleClientId: local('googleClientId') || '',
+    googleClientId: getSetting('googleClientId', '') || '',
   };
 }
 
+// The token and the repo coordinates stay device-local: the token must never
+// travel into data.json, and it is entered per device on purpose. The Google
+// client id is different. It is not a secret, it is the same on every device,
+// and syncing it means he types it once rather than once per device.
 export function setConfig(patch) {
   for (const [key, value] of Object.entries(patch)) {
-    local(key, value === '' ? null : value);
+    if (key === 'googleClientId') setSetting('googleClientId', value === '' ? null : value);
+    else local(key, value === '' ? null : value);
   }
   sha = null; // a different repo or token means the old sha means nothing
   if (isConfigured()) syncNow();
