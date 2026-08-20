@@ -74,7 +74,7 @@ export const MEALS = [
 ];
 
 export const SESSIONS = {
-  upperA: { name: 'Upper A, chest and shoulders', exercises: [
+  upperA: { name: 'Upper A, chest and shoulders', minutes: 55, exercises: [
     { id: 'chest-press', name: 'Chest press machine', sets: 4, reps: '8-12', note: 'Handles at mid-chest. Do not lock out.' },
     { id: 'db-ohp', name: 'Seated dumbbell shoulder press', sets: 4, reps: '8-12', note: 'Elbows slightly in front, not flared wide.' },
     { id: 'pulldown-narrow', name: 'Lat pulldown, shoulder-width', sets: 4, reps: '8-12', note: 'To the collarbone, never behind the neck.' },
@@ -82,7 +82,7 @@ export const SESSIONS = {
     { id: 'lateral', name: 'Dumbbell lateral raise', sets: 4, reps: '12-20', note: 'Light. Lead with elbows, stop at shoulder height.' },
     { id: 'tri-ext', name: 'Overhead triceps extension', sets: 3, reps: '10-12', note: 'One dumbbell, both hands, slow down.' },
   ]},
-  lowerA: { name: 'Lower A', exercises: [
+  lowerA: { name: 'Lower A', minutes: 50, exercises: [
     { id: 'goblet', name: 'Goblet squat', sets: 4, reps: '8-10', note: 'Sit between your feet, chest tall.' },
     { id: 'rdl', name: 'Dumbbell Romanian deadlift', sets: 3, reps: '10-12', note: 'Hips back, soft knees, stop when hamstrings scream.' },
     { id: 'bulgarian', name: 'Bulgarian split squat', sets: 3, reps: '8-10 each', note: 'Rear foot on the bench.' },
@@ -90,7 +90,7 @@ export const SESSIONS = {
     { id: 'lateral', name: 'Dumbbell lateral raise', sets: 3, reps: '15-20', note: 'Yes, on leg day. Delts recover fast.' },
     { id: 'plank', name: 'Plank', sets: 3, reps: '40s', note: 'Glutes squeezed, hips level.' },
   ]},
-  shirt: { name: 'The shirt session', exercises: [
+  shirt: { name: 'The shirt session', minutes: 35, exercises: [
     { id: 'lateral', name: 'Dumbbell lateral raise', sets: 4, reps: '12-20', note: 'Fresh for once. Rest 60s throughout this session.' },
     { id: 'pulldown-wide', name: 'Lat pulldown, wide grip', sets: 4, reps: '10-12', note: 'Width. Makes the waist look smaller without changing it.' },
     { id: 'cs-row', name: 'Chest-supported dumbbell row', sets: 4, reps: '10-12', note: 'Face down on an incline bench.' },
@@ -98,7 +98,7 @@ export const SESSIONS = {
     { id: 'db-curl', name: 'Dumbbell curl', sets: 3, reps: '10-12', note: 'Elbows pinned. No swinging.' },
     { id: 'skull', name: 'Skullcrusher', sets: 3, reps: '12-15', note: 'To the forehead, not the chin.' },
   ]},
-  upperB: { name: 'Upper B, back and arms', exercises: [
+  upperB: { name: 'Upper B, back and arms', minutes: 55, exercises: [
     { id: 'pulldown-wide', name: 'Lat pulldown, wide grip', sets: 4, reps: '8-12', note: 'Heavier than Wednesday.' },
     { id: 'incline-press', name: 'Incline dumbbell press', sets: 4, reps: '8-12', note: 'Bench at 30 degrees, no higher.' },
     { id: 'db-row', name: 'One-arm dumbbell row', sets: 4, reps: '10-12 each', note: 'Pull to the hip, not the armpit.' },
@@ -106,7 +106,7 @@ export const SESSIONS = {
     { id: 'pullover', name: 'Dumbbell pullover', sets: 3, reps: '12-15', note: 'Across the bench, big stretch on the lats.' },
     { id: 'hammer', name: 'Hammer curl', sets: 3, reps: '10-12', note: 'Palms facing each other.' },
   ]},
-  lowerB: { name: 'Lower B', exercises: [
+  lowerB: { name: 'Lower B', minutes: 50, exercises: [
     { id: 'rdl', name: 'Dumbbell Romanian deadlift', sets: 4, reps: '8-10', note: 'Heavier than Tuesday.' },
     { id: 'rev-lunge', name: 'Dumbbell reverse lunge', sets: 3, reps: '10 each', note: 'Step backwards. Kinder on the knees.' },
     { id: 'leg-ext', name: 'Leg extension', sets: 3, reps: '15-20', note: 'Chase the burn.' },

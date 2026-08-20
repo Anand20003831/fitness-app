@@ -26,7 +26,7 @@ const tabbar = document.getElementById('tabbar');
 const TABS = ['today', 'calendar', 'meals', 'train', 'log', 'coach', 'settings'];
 
 // Transient screen state. Never persisted.
-const ui = { editWeight: false, sessionOverride: null, pendingPatch: null };
+const ui = { editWeight: false, sessionOverride: null, pendingPatch: null, sessionEditor: null };
 
 // Small stable hash, only used to keep generated exercise ids from colliding.
 function hashString(text) {
@@ -91,6 +91,18 @@ function setSyncPill(stateName, text, title) {
 
 // ---------------------------------------------------------------- today
 
+// The session's time on the Today card, so he does not have to open the day
+// view to know when it is meant to happen.
+function todaySessionTime(key, session) {
+  const day = getDay(key) || {};
+  const minutes = day.sessionMinutes || session.minutes || 50;
+  const pinned = fromHHMM(day.sessionStart);
+  if (pinned != null) return `${hhmm(pinned)}–${hhmm(pinned + minutes)} · `;
+  if (!calendar.isConfigured()) return '';
+  const auto = autoSlot(calState.events || [], key, minutes);
+  return `${hhmm(auto.start)}–${hhmm(auto.start + minutes)} · `;
+}
+
 function renderToday() {
   const key = todayKey();
   const day = getDay(key) || {};
@@ -136,7 +148,7 @@ function renderToday() {
           <div class="grow">
             <p class="card-title" style="margin:0 0 4px">Today's session</p>
             <div class="name">${esc(session.name)}</div>
-            <div class="small">${session.exercises.length} exercises</div>
+            <div class="small">${todaySessionTime(key, session)}${session.exercises.length} exercises</div>
           </div>
           <button class="btn" type="button" data-action="goto" data-href="#train">Start</button>
         </div>
@@ -671,6 +683,53 @@ function nowMinutes() {
   return Number(LDN_HOUR.format(now)) * 60 + Number(LDN_MIN.format(now));
 }
 
+// ---------------------------------------------------------------- scheduling
+//
+// Where the session goes. Timed events block it; all-day ones do not, because
+// "Ikbal off" or a family retreat marks the whole day without occupying an hour
+// of it, and refusing to schedule around those would leave nowhere to train.
+
+const SCHED = { earliest: 7 * 60, latest: 21 * 60, step: 15 };
+
+function busyIntervals(events, dateKey) {
+  return events
+    .filter((e) => !e.allDay && e.start && e.end)
+    .map((e) => [minutesInto(e.start, dateKey), minutesInto(e.end, dateKey)])
+    .filter(([from, to]) => to > from)
+    .sort((a, b) => a[0] - b[0]);
+}
+
+function clashes(start, minutes, busy) {
+  const end = start + minutes;
+  return busy.some(([from, to]) => start < to && end > from);
+}
+
+// The plan says morning training helps, and never to walk-jog before lifting,
+// so this walks forward from the earliest sensible hour and takes the first
+// gap that fits rather than hunting for a "best" one.
+function autoSlot(events, dateKey, minutes) {
+  const busy = busyIntervals(events, dateKey);
+  for (let start = SCHED.earliest; start + minutes <= SCHED.latest; start += SCHED.step) {
+    if (!clashes(start, minutes, busy)) return { start, fits: true };
+  }
+  return { start: SCHED.earliest, fits: false };
+}
+
+function sessionClashes(start, minutes, events, dateKey) {
+  return clashes(start, minutes, busyIntervals(events, dateKey));
+}
+
+function hhmm(mins) {
+  const m = ((mins % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+}
+
+function fromHHMM(text) {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(String(text || '').trim());
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
 function renderCalendarTab() {
   const key = calendarRoute();
   const isToday = key === todayKey();
@@ -700,6 +759,21 @@ function renderCalendarTab() {
     <div id="dayBody">${renderDayBody(key, session)}</div>`;
 }
 
+// Resolves where the session sits today: his explicit choice if he has moved
+// it, otherwise the first free gap. Auto placement is recomputed rather than
+// stored, so when a lecture moves the session follows it until he pins it.
+function sessionSlot(key, session, events) {
+  if (!session) return null;
+  const day = getDay(key) || {};
+  const minutes = day.sessionMinutes || session.minutes || 50;
+  const pinned = fromHHMM(day.sessionStart);
+  if (pinned != null) {
+    return { start: pinned, minutes, pinned: true, clash: sessionClashes(pinned, minutes, events, key) };
+  }
+  const auto = autoSlot(events, key, minutes);
+  return { start: auto.start, minutes, pinned: false, clash: !auto.fits };
+}
+
 function renderDayBody(key, session) {
   if (!calendar.isConfigured()) {
     return `<div class="card"><p class="small" style="margin:0">Calendar not connected.
@@ -714,15 +788,17 @@ function renderDayBody(key, session) {
 
   const { timed, allDay } = calendar.layout(dayView.events);
 
-  // All-day items and the session sit above the grid as thin chips, the way a
-  // calendar app does it, because they have no time to be drawn against.
-  const chips = [
-    ...(session ? [{ label: session.name, kind: 'session' }] : []),
-    ...allDay.map((e) => ({ label: e.summary, kind: 'allday' })),
-  ];
+  // The session is drawn on the grid now, not listed as a chip, so only genuine
+  // all-day items sit in the strip.
+  const chips = allDay.map((e) => ({ label: e.summary, kind: 'allday' }));
+  const slot = sessionSlot(key, session, dayView.events);
 
   let earliest = 8 * 60;
   let latest = 20 * 60;
+  if (slot) {
+    earliest = Math.min(earliest, slot.start);
+    latest = Math.max(latest, slot.start + slot.minutes);
+  }
   for (const event of timed) {
     earliest = Math.min(earliest, minutesInto(event.start, key));
     latest = Math.max(latest, minutesInto(event.end, key));
@@ -751,11 +827,20 @@ function renderDayBody(key, session) {
     ${chipsHtml}
     ${noticeHtml}
     <div class="card daygrid-card">
-      <div class="daygrid" style="height:${height}px">
+      <div class="daygrid" data-start-hour="${startHour}" data-hour-px="${HOUR_PX}" data-date="${key}" style="height:${height}px">
         ${hours.map((h) => `
           <div class="hourline" style="top:${top(h * 60)}px"></div>
           <div class="hourlabel" style="top:${top(h * 60) - 7}px">${String(h % 24).padStart(2, '0')}:00</div>
         `).join('')}
+        ${slot ? `
+          <div class="event session${slot.pinned ? ' pinned' : ''}${slot.clash ? ' clash' : ''}"
+            data-session-block="1" data-date="${key}"
+            style="top:${top(slot.start)}px;height:${Math.max(30, (slot.minutes / 60) * HOUR_PX - 2)}px;left:${GUTTER}px;right:6px">
+            <div class="event-time">${hhmm(slot.start)}&ndash;${hhmm(slot.start + slot.minutes)}${slot.pinned ? '' : ' · auto'}</div>
+            <div class="event-title">${esc(session.name)}</div>
+            ${slot.clash ? '<div class="event-loc">clashes with something</div>' : ''}
+            <span class="draghandle" aria-hidden="true"></span>
+          </div>` : ''}
         ${showNow ? `<div class="nowline" style="top:${top(now)}px"><i></i></div>` : ''}
         ${timed.map((event) => {
           const from = minutesInto(event.start, key);
@@ -770,8 +855,124 @@ function renderDayBody(key, session) {
         }).join('')}
       </div>
     </div>
-    ${!timed.length && dayView.state === 'ok'
+    ${renderSessionTimeEditor(key, session, slot)}
+    ${!timed.length && dayView.state === "ok"
       ? '<p class="small" style="margin:-4px 0 0">Nothing timetabled. The whole day is yours.</p>' : ''}`;
+}
+
+// ---------------------------------------------------------------- dragging
+//
+// Pointer events rather than HTML5 drag and drop, because drag and drop does
+// not exist on touch. Snaps to 15 minutes: finer than that is fiddling, and he
+// is doing this one-handed.
+//
+// A press that never really moves is treated as a tap and opens the editor, so
+// the same block does both jobs without needing a separate control.
+
+const SNAP = 15;
+let dragging = null;
+
+function gridGeometry() {
+  const grid = document.querySelector('.daygrid');
+  if (!grid) return null;
+  return {
+    grid,
+    startHour: Number(grid.dataset.startHour) || 0,
+    hourPx: Number(grid.dataset.hourPx) || 58,
+    date: grid.dataset.date,
+  };
+}
+
+view.addEventListener('pointerdown', (event) => {
+  const block = event.target.closest('[data-session-block]');
+  if (!block) return;
+  const geo = gridGeometry();
+  if (!geo) return;
+
+  const day = getDay(geo.date) || {};
+  const session = effectiveSession(WEEK[dayOfWeek(geo.date)]);
+  if (!session) return;
+  const minutes = day.sessionMinutes || session.minutes || 50;
+
+  dragging = {
+    block,
+    geo,
+    minutes,
+    startY: event.clientY,
+    originTop: block.offsetTop,
+    moved: false,
+  };
+  try { block.setPointerCapture(event.pointerId); } catch { /* synthetic or stale pointer */ }
+  block.classList.add('grabbed');
+});
+
+view.addEventListener('pointermove', (event) => {
+  if (!dragging) return;
+  const delta = event.clientY - dragging.startY;
+  if (Math.abs(delta) > 4) dragging.moved = true;
+  if (!dragging.moved) return;
+  event.preventDefault();
+
+  const perMinute = dragging.geo.hourPx / 60;
+  const rawStart = dragging.geo.startHour * 60 + (dragging.originTop + delta) / perMinute;
+  const snapped = Math.round(rawStart / SNAP) * SNAP;
+  const clamped = Math.max(0, Math.min(24 * 60 - dragging.minutes, snapped));
+  dragging.pending = clamped;
+
+  dragging.block.style.top = `${(clamped - dragging.geo.startHour * 60) * perMinute}px`;
+  const label = dragging.block.querySelector('.event-time');
+  if (label) label.textContent = `${hhmm(clamped)}–${hhmm(clamped + dragging.minutes)}`;
+});
+
+view.addEventListener('pointerup', (event) => {
+  if (!dragging) return;
+  const { block, geo, moved, pending } = dragging;
+  block.classList.remove('grabbed');
+  dragging = null;
+
+  if (!moved) { openSessionEditor(geo.date); return; }
+  if (pending == null) return;
+  patchDay(geo.date, { sessionStart: hhmm(pending) });
+  paintDay();
+});
+
+view.addEventListener('pointercancel', () => {
+  if (dragging) dragging.block.classList.remove('grabbed');
+  dragging = null;
+  paintDay();
+});
+
+// ---------------------------------------------------------------- editor
+
+function openSessionEditor(dateKey) {
+  ui.sessionEditor = ui.sessionEditor === dateKey ? null : dateKey;
+  paintDay();
+}
+
+function renderSessionTimeEditor(key, session, slot) {
+  if (ui.sessionEditor !== key || !slot) return '';
+  return `
+    <div class="card sessedit">
+      <div class="card-head"><p class="card-title">${esc(session.name)}</p></div>
+      <div class="editgrid">
+        <div class="field">
+          <label class="lbl" for="sessStart">Starts</label>
+          <input type="time" id="sessStart" data-sess="start" data-date="${key}" value="${hhmm(slot.start)}">
+        </div>
+        <div class="field">
+          <label class="lbl" for="sessMins">Minutes</label>
+          <input type="number" id="sessMins" inputmode="numeric" step="5" min="10" max="240"
+            data-sess="minutes" data-date="${key}" value="${slot.minutes}">
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn quiet small" type="button" data-action="sess-auto" data-date="${key}">Find a free slot</button>
+        ${slot.pinned ? `<button class="btn quiet small" type="button" data-action="sess-clear" data-date="${key}">Back to automatic</button>` : ''}
+        <button class="btn quiet small" type="button" data-action="sess-close">Done</button>
+      </div>
+      <p class="small" style="margin:12px 0 0">Drag the block to move it. All-day things are ignored
+      when it places itself, since they take up the day rather than an hour of it.</p>
+    </div>`;
 }
 
 function paintDay() {
@@ -1402,6 +1603,27 @@ view.addEventListener('click', (event) => {
       break;
     }
 
+    case 'sess-auto': {
+      const date = el.dataset.date;
+      const session = effectiveSession(WEEK[dayOfWeek(date)]);
+      const day = getDay(date) || {};
+      const minutes = day.sessionMinutes || (session && session.minutes) || 50;
+      const auto = autoSlot(dayView.events, date, minutes);
+      patchDay(date, { sessionStart: hhmm(auto.start) });
+      paintDay();
+      break;
+    }
+
+    case 'sess-clear':
+      patchDay(el.dataset.date, { sessionStart: null });
+      paintDay();
+      break;
+
+    case 'sess-close':
+      ui.sessionEditor = null;
+      paintDay();
+      break;
+
     case 'day-shift': {
       const current = calendarRoute();
       location.hash = '#calendar/' + addDays(current, Number(el.dataset.delta));
@@ -1659,6 +1881,19 @@ view.addEventListener('change', (event) => {
 
   // Plan edits commit on change without re-rendering, so the keyboard stays put
   // while he moves between fields.
+  if (el.dataset.sess) {
+    const date = el.dataset.date;
+    if (el.dataset.sess === 'start') {
+      const mins = fromHHMM(el.value);
+      patchDay(date, { sessionStart: mins == null ? null : hhmm(mins) });
+    } else {
+      const value = Number(el.value);
+      patchDay(date, { sessionMinutes: Number.isFinite(value) && value > 0 ? value : null });
+    }
+    paintDay();
+    return;
+  }
+
   if (el.dataset.target) {
     const value = el.value.trim();
     setTarget(el.dataset.target, value === '' ? null : Number(value));

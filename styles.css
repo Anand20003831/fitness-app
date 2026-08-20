@@ -44,7 +44,10 @@
 :root[data-textsize="large"]{ font-size:18px; }
 
 *{box-sizing:border-box}
-html,body{overflow-x:hidden}
+/* clip, not hidden. overflow-x:hidden makes body a scroll container, which
+   silently stops position:sticky working on the header. clip does the same job
+   of preventing sideways scroll without creating one. */
+html,body{overflow-x:clip}
 body{
   margin:0;background:var(--bg);color:var(--ink);
   font:1rem/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
@@ -486,3 +489,31 @@ select{
   overflow:hidden;text-overflow:ellipsis}
 .event-loc{font-size:.62rem;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .daynav .iconbtn{font-size:1.5rem;line-height:1;font-weight:400}
+
+/* The session block. Draggable, so it needs touch-action:none or the browser
+   scrolls the page instead of letting the pointer handler see the move. */
+.event.session{
+  background:color-mix(in srgb, var(--good) 26%, var(--panel));
+  border-left:3px solid var(--good);
+  border-radius:0 8px 8px 0;
+  cursor:grab;touch-action:none;user-select:none;
+  z-index:4;
+}
+.event.session .event-title{color:var(--ink)}
+.event.session.pinned{border-left-style:solid}
+.event.session:not(.pinned){border-left-style:dashed}
+.event.session.clash{
+  background:color-mix(in srgb, var(--warn) 26%, var(--panel));
+  border-left-color:var(--warn);
+}
+.event.session.grabbed{cursor:grabbing;opacity:.9;
+  box-shadow:0 6px 20px rgba(0,0,0,.45);z-index:6}
+.draghandle{
+  position:absolute;right:8px;top:50%;transform:translateY(-50%);
+  width:18px;height:12px;opacity:.5;
+  background:
+    linear-gradient(currentColor,currentColor) 0 0/100% 2px no-repeat,
+    linear-gradient(currentColor,currentColor) 0 5px/100% 2px no-repeat,
+    linear-gradient(currentColor,currentColor) 0 10px/100% 2px no-repeat;
+}
+.sessedit{margin-top:14px}

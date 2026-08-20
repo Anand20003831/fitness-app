@@ -4,7 +4,7 @@
 // Bump CACHE when you change the files below. Old caches are deleted on
 // activate, so a stale version cannot survive an update.
 
-const CACHE = 'fitness-v7';
+const CACHE = 'fitness-v8';
 
 const SHELL = [
   './',

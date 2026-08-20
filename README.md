@@ -201,6 +201,32 @@ Every part is optional; send only what changes.
 - Meal ids: `breakfast`, `lunch`, `afternoon`, `dinner`, `extras`.
 - Session ids: `upperA`, `lowerA`, `shirt`, `upperB`, `lowerB`.
 
+### The day view and the session
+
+The Day tab draws the hours down the side with your Google events against
+them. All-day items sit as a strip above the grid, since they take up the day
+rather than an hour of it.
+
+Your training session is drawn on the grid as a green block:
+
+- **It places itself** in the first free gap between 07:00 and 21:00 that fits.
+  Timed events block it; all-day ones do not, because otherwise a day marked
+  "off" would leave nowhere to train.
+- **Drag it** to move it, snapping to 15 minutes. Once dragged it is pinned,
+  shown with a solid edge instead of a dashed one, and it stays put even if the
+  calendar around it changes.
+- **Tap it** for exact start time, length, "find a free slot", and "back to
+  automatic".
+- If a pinned session overlaps something it turns amber and says so, rather
+  than quietly sitting on top of a lecture.
+
+Times live in `days[date].sessionStart` and `sessionMinutes` in `data.json`, so
+they sync. An automatic placement is recomputed rather than stored, which is
+what lets the session follow a lecture that moves until you pin it.
+
+Session lengths come from `plan.js` (`minutes` on each session), so changing
+one there changes the block.
+
 ## Appearance
 
 Settings, Appearance: theme (dark, light, or follow the system), five accent
@@ -226,6 +252,7 @@ days      weight, bedTime, wakeTime, meal ticks, walkjog, notes
 workouts  sessionId and every set as { kg, reps, done }
 measures  waist and shoulders
 settings  startWeight, goalDate, shopping, appearance, planPatch, googleClientId
+days      also sessionStart and sessionMinutes when a session has been moved
 ```
 
 Records carry `updatedAt`, and entries in `days` also carry `fieldsUpdatedAt`
