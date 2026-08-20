@@ -720,3 +720,108 @@ input[type=text],input[type=number],input[type=time],input[type=password],textar
 .chart .dot{opacity:.35;r:1.4}
 .chart .grid{stroke:var(--surface-line)}
 .swatch.avg{background:linear-gradient(100deg,var(--grad-from),var(--grad-to))}
+
+/* The lane strip. Events are positioned in percentages of this, which excludes
+   the hour gutter, so a right-hand column lands inside the card instead of
+   hanging off its edge. */
+.daygrid{--gutter:46px}
+.daylanes{position:absolute;left:var(--gutter);right:8px;top:0;bottom:0}
+.hourline{left:var(--gutter)}
+.hourlabel{width:calc(var(--gutter) - 6px)}
+.nowline{left:0;right:0}
+
+/* ================================================================ motion
+   Morph rather than slide. Elements sharing a view-transition-name are tweened
+   between their old and new geometry; everything else cross-fades. Movement is
+   kept small on purpose: a few pixels and a hair of scale reads as things
+   settling into place, where a big slide reads as the screen being thrown. */
+
+::view-transition-old(root),
+::view-transition-new(root){
+  animation-duration:240ms;
+  animation-timing-function:cubic-bezier(.32,.72,0,1);
+}
+::view-transition-old(root){animation-name:vtOut}
+::view-transition-new(root){animation-name:vtIn}
+@keyframes vtOut{to{opacity:0;transform:scale(.985)}}
+@keyframes vtIn{from{opacity:0;transform:scale(1.008)}}
+
+/* Named elements get the longer, softer curve so the morph is readable. */
+::view-transition-group(vt-title),
+::view-transition-group(vt-session),
+::view-transition-group(*){
+  animation-duration:300ms;
+  animation-timing-function:cubic-bezier(.32,.72,0,1);
+}
+
+/* Cards settle in rather than appearing. Staggered just enough to read as a
+   sequence without anyone waiting for it. */
+@keyframes settle{from{opacity:0;transform:translateY(6px) scale(.995)}}
+main .card,
+main .exedit,
+main .difflist li{
+  animation:settle 260ms cubic-bezier(.32,.72,0,1) both;
+}
+main .card:nth-child(1){animation-delay:0ms}
+main .card:nth-child(2){animation-delay:24ms}
+main .card:nth-child(3){animation-delay:48ms}
+main .card:nth-child(4){animation-delay:72ms}
+main .card:nth-child(n+5){animation-delay:90ms}
+
+/* Small interactions. All transform and opacity, so none of them cost layout. */
+.tick i,.setdone{transition:background .16s ease,border-color .16s ease,transform .16s cubic-bezier(.34,1.56,.64,1)}
+.tick:active i{transform:scale(.88)}
+.tick[aria-pressed="true"] i{transform:scale(1)}
+@keyframes pop{0%{transform:scale(.86)}60%{transform:scale(1.06)}100%{transform:scale(1)}}
+.tick[aria-pressed="true"] i,.setdone[aria-pressed="true"]{animation:pop 260ms cubic-bezier(.34,1.56,.64,1)}
+.btn{transition:transform .12s ease,box-shadow .2s ease,filter .2s ease}
+.btn:active{filter:brightness(1.06)}
+.choice,.swatchbtn,.iconbtn{transition:border-color .18s ease,color .18s ease,background .18s ease,transform .14s ease}
+.choice:active,.swatchbtn:active{transform:scale(.97)}
+.caret{transition:transform .22s cubic-bezier(.32,.72,0,1)}
+.mealbody{animation:settle 240ms cubic-bezier(.32,.72,0,1) both}
+.event,.chip{transition:transform .18s cubic-bezier(.32,.72,0,1),box-shadow .18s ease}
+.event.session.grabbed{transform:scale(1.015)}
+.bar>i{transition:width .45s cubic-bezier(.32,.72,0,1)}
+.chart .avg{transition:stroke-width .2s ease}
+.tabbar a[aria-current="page"]::after{animation:pop 300ms cubic-bezier(.34,1.56,.64,1)}
+.tabbar a svg{transition:transform .18s cubic-bezier(.34,1.56,.64,1)}
+.tabbar a[aria-current="page"] svg{transform:translateY(-1px) scale(1.06)}
+.testresult{animation:settle 220ms cubic-bezier(.32,.72,0,1) both}
+
+/* Off means off: his switch, and the system setting, both honoured. */
+:root[data-motion="off"] *,
+:root[data-motion="off"] *::before,
+:root[data-motion="off"] *::after{
+  animation-duration:.001ms !important;
+  animation-delay:0ms !important;
+  transition-duration:.001ms !important;
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{
+    animation-duration:.001ms !important;
+    animation-delay:0ms !important;
+    transition-duration:.001ms !important;
+  }
+}
+
+/* Positional morphs. Every top-level block on a screen is paired with the block
+   in the same position on the next, so the whole layout rearranges itself
+   rather than one card moving while everything else cross-fades. */
+::view-transition-group(*){
+  animation-duration:320ms;
+  animation-timing-function:cubic-bezier(.32,.72,0,1);
+}
+/* Contents cross-fade over the shape change, which is what stops a card
+   morphing into a differently-shaped one from looking stretched. */
+::view-transition-old(*),
+::view-transition-new(*){
+  animation-duration:200ms;
+  animation-timing-function:cubic-bezier(.4,0,.2,1);
+  height:100%;
+  overflow:clip;
+}
+::view-transition-old(*){animation-name:morphOut}
+::view-transition-new(*){animation-name:morphIn}
+@keyframes morphOut{to{opacity:0}}
+@keyframes morphIn{from{opacity:0}}

@@ -144,7 +144,7 @@ function renderToday() {
 
     <div class="card">
       ${session ? `
-        <div class="session">
+        <div class="session" style="view-transition-name:vt-session">
           <div class="grow">
             <p class="card-title" style="margin:0 0 4px">Today's session</p>
             <div class="name">${esc(session.name)}</div>
@@ -153,7 +153,7 @@ function renderToday() {
           <button class="btn" type="button" data-action="goto" data-href="#train">Start</button>
         </div>
       ` : `
-        <div class="session">
+        <div class="session" style="view-transition-name:vt-session">
           <div class="grow">
             <p class="card-title" style="margin:0 0 4px">Today's session</p>
             <div class="name">Rest day</div>
@@ -180,8 +180,8 @@ function renderToday() {
       ${todaysMeals.map((meal) => {
         const on = !!meals[meal.id];
         return `
-          <div class="row${on ? ' done' : ''}">
-            ${tick(on, 'toggle-meal', `data-meal="${meal.id}"`)}
+          <div class="row${on ? " done" : ""}" style="view-transition-name:vt-meal-${meal.id}">
+            ${tick(on, "toggle-meal", `data-meal="${meal.id}"`)}
             <div class="grow">
               <div class="name">${esc(meal.name)}</div>
               <div class="meta">${meal.kcal} kcal · ${meal.protein} g protein</div>
@@ -463,7 +463,7 @@ function renderMeals() {
     ${meals.map((meal) => {
       const isOpen = open === meal.id;
       return `
-        <div class="card meal${isOpen ? ' open' : ''}" id="meal-${meal.id}">
+        <div class="card meal${isOpen ? " open" : ""}" id="meal-${meal.id}" style="view-transition-name:vt-meal-${meal.id}">
           <button class="mealhead" type="button" data-action="toggle-meal-open" data-meal="${meal.id}"
             aria-expanded="${isOpen ? 'true' : 'false'}">
             <span class="grow">
@@ -838,28 +838,34 @@ function renderDayBody(key, session) {
           <div class="hourline" style="top:${top(h * 60)}px"></div>
           <div class="hourlabel" style="top:${top(h * 60) - 7}px">${String(h % 24).padStart(2, '0')}:00</div>
         `).join('')}
-        ${slot ? `
-          <div class="event session${slot.pinned ? ' pinned' : ''}${slot.clash ? ' clash' : ''}"
-            data-session-block="1" data-date="${key}"
-            style="top:${top(slot.start)}px;height:${Math.max(30, (slot.minutes / 60) * HOUR_PX - 2)}px;left:${GUTTER}px;right:6px">
-            <div class="event-time">${hhmm(slot.start)}&ndash;${hhmm(slot.start + slot.minutes)}${slot.pinned ? '' : ' · auto'}</div>
-            <div class="event-title">${esc(session.name)}</div>
-            ${slot.clash ? '<div class="event-loc">clashes with something</div>' : ''}
-            <span class="draghandle" aria-hidden="true"></span>
-          </div>` : ''}
-        ${showNow ? `<div class="nowline" style="top:${top(now)}px"><i></i></div>` : ''}
-        ${timed.map((event) => {
-          const from = minutesInto(event.start, key);
-          const to = minutesInto(event.end, key);
-          const width = 99 / event.columns;
-          return `
-            <div class="event" style="top:${top(from)}px;height:${Math.max(22, ((to - from) / 60) * HOUR_PX - 2)}px;left:calc(${GUTTER}px + ${event.column * width}%);width:calc(${width}% - 8px)">
-              <div class="event-time">${esc(calendar.formatTime(event.start))}</div>
-              <div class="event-title">${esc(event.summary)}</div>
-              ${event.location ? `<div class="event-loc">${esc(event.location)}</div>` : ''}
-            </div>`;
-        }).join('')}
+        <div class="daylanes">
+          ${slot ? `
+            <div class="event session${slot.pinned ? ' pinned' : ''}${slot.clash ? ' clash' : ''}"
+              data-session-block="1" data-date="${key}"
+              style="view-transition-name:vt-session;top:${top(slot.start)}px;height:${Math.max(30, (slot.minutes / 60) * HOUR_PX - 2)}px;left:0;right:0">
+              <div class="event-time">${hhmm(slot.start)}&ndash;${hhmm(slot.start + slot.minutes)}${slot.pinned ? '' : ' · auto'}</div>
+              <div class="event-title">${esc(session.name)}</div>
+              ${slot.clash ? '<div class="event-loc">clashes with something</div>' : ''}
+              <span class="draghandle" aria-hidden="true"></span>
+            </div>` : ''}
+          ${showNow ? `<div class="nowline" style="top:${top(now)}px"><i></i></div>` : ''}
+          ${timed.map((event) => {
+            const from = minutesInto(event.start, key);
+            const to = minutesInto(event.end, key);
+            // Percentages of the lane strip, which already excludes the hour
+            // gutter. Mixing a px gutter into a percentage left offset is what
+            // pushed the right-hand column off the edge of the card.
+            const lane = 100 / event.columns;
+            return `
+              <div class="event" style="top:${top(from)}px;height:${Math.max(22, ((to - from) / 60) * HOUR_PX - 2)}px;left:${(event.column * lane).toFixed(3)}%;width:calc(${lane.toFixed(3)}% - 5px)">
+                <div class="event-time">${esc(calendar.formatTime(event.start))}</div>
+                <div class="event-title">${esc(event.summary)}</div>
+                ${event.location ? `<div class="event-loc">${esc(event.location)}</div>` : ''}
+              </div>`;
+          }).join('')}
+        </div>
       </div>
+    </div>
     </div>
     ${renderSessionTimeEditor(key, session, slot)}
     ${!timed.length && dayView.state === "ok"
@@ -1250,6 +1256,7 @@ const ACCENTS = [
 const TEXT_SIZES = [['normal', 'Normal'], ['large', 'Large']];
 const SURFACES = [['glass', 'Glass'], ['solid', 'Solid']];
 const BLOBS = [['on', 'On'], ['off', 'Off']];
+const MOTION = [['on', 'On'], ['off', 'Off']];
 
 // Lives in settings, so it syncs. Applied by setting attributes the stylesheet
 // keys off, which is the same thing the inline script in index.html does before
@@ -1261,6 +1268,7 @@ export function applyAppearance() {
   root.setAttribute('data-textsize', getSetting('textSize', 'normal'));
   root.setAttribute('data-surface', getSetting('surface', 'glass'));
   root.setAttribute('data-blobs', getSetting('blobs', 'on'));
+  root.setAttribute('data-motion', getSetting('motion', 'on'));
 }
 function renderAppearance() {
   const theme = getSetting('theme', 'system');
@@ -1268,6 +1276,7 @@ function renderAppearance() {
   const textSize = getSetting('textSize', 'normal');
   const surface = getSetting('surface', 'glass');
   const blobs = getSetting('blobs', 'on');
+  const motion = getSetting('motion', 'on');
 
   return `
     <div class="card">
@@ -1307,6 +1316,13 @@ function renderAppearance() {
         ${BLOBS.map(([id, label]) => `
           <button class="choice" type="button" aria-pressed="${blobs === id}"
             data-action="set-blobs" data-value="${id}">${label}</button>`).join('')}
+      </div>
+
+      <label class="lbl" style="margin-top:18px">Animation</label>
+      <div class="choices">
+        ${MOTION.map(([id, label]) => `
+          <button class="choice" type="button" aria-pressed="${motion === id}"
+            data-action="set-motion" data-value="${id}">${label}</button>`).join('')}
       </div>
 
       <p class="small" style="margin:16px 0 0">The strip at the top of the phone stays dark
@@ -1414,7 +1430,42 @@ function currentTab() {
   return TABS.includes(tab) ? tab : 'today';
 }
 
+// Renders through the View Transitions API where it exists, which is what gives
+// the morph rather than a slide: elements carrying the same view-transition-name
+// on both screens are tweened between their old and new position and size, and
+// everything else cross-fades. Falls straight through to a plain render on
+// browsers without it, and is skipped entirely when motion is turned off.
+function withTransition(mutate) {
+  const motionOff = getSetting('motion', 'on') === 'off'
+    || window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (motionOff || !document.startViewTransition || dragging) { mutate(); return; }
+  document.startViewTransition(mutate);
+}
+
 function render() {
+  withTransition(paint);
+}
+
+// Every top-level block on a screen gets a positional name, so block 1 of the
+// screen he is leaving morphs into block 1 of the screen he is arriving at,
+// block 2 into block 2, and so on. They are usually different things, which is
+// the point: the morning weight card flowing into the day grid reads as the UI
+// rearranging itself rather than two screens swapping.
+//
+// Anything already carrying a name is left alone, and so is any block that
+// contains one, because a named descendant is painted separately and a parent
+// wrapped around it would animate with a hole in it.
+function assignMorphSlots() {
+  let slot = 0;
+  for (const el of view.children) {
+    if (el.style.viewTransitionName) continue;
+    if (el.querySelector('[style*="view-transition-name"]')) continue;
+    slot += 1;
+    el.style.viewTransitionName = `vt-slot-${slot}`;
+  }
+}
+
+function paint() {
   const tab = currentTab();
   view.innerHTML = SCREENS[tab]();
   for (const a of tabbar.querySelectorAll('a')) {
@@ -1429,6 +1480,7 @@ function render() {
     if (tab === 'settings') gear.setAttribute('aria-current', 'page');
     else gear.removeAttribute('aria-current');
   }
+  assignMorphSlots();
   document.title = tab === 'today' ? 'Fitness' : 'Fitness · ' + tab[0].toUpperCase() + tab.slice(1);
 }
 
@@ -1692,9 +1744,10 @@ view.addEventListener('click', (event) => {
     case 'set-accent':
     case 'set-textsize':
     case 'set-surface':
-    case 'set-blobs': {
+    case 'set-blobs':
+    case 'set-motion': {
       const field = { 'set-theme': 'theme', 'set-accent': 'accent', 'set-textsize': 'textSize',
-        'set-surface': 'surface', 'set-blobs': 'blobs' }[el.dataset.action];
+        'set-surface': 'surface', 'set-blobs': 'blobs', 'set-motion': 'motion' }[el.dataset.action];
       setSetting(field, el.dataset.value);
       applyAppearance();
       render();
