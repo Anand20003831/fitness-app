@@ -435,3 +435,54 @@ select{
   stroke-linecap:round;stroke-linejoin:round}
 .tabbar a[aria-current="page"]{color:var(--accent)}
 .tabbar a:active{background:var(--panel2)}
+
+/* ---------------------------------------------------------------- day view */
+
+.gear{
+  flex:none;width:40px;height:40px;display:grid;place-items:center;
+  color:var(--mute);border-radius:10px;text-decoration:none;
+}
+.gear svg{width:21px;height:21px;stroke:currentColor;fill:none;stroke-width:1.9;
+  stroke-linecap:round;stroke-linejoin:round}
+.gear[aria-current="page"]{color:var(--accent);background:var(--panel2)}
+
+.daynav{display:flex;align-items:center;gap:10px;margin:0 0 14px}
+.daynav .grow{flex:1}
+
+.chips{display:flex;flex-direction:column;gap:6px;margin:0 0 12px}
+.chip{
+  padding:8px 12px;border-radius:8px;font-size:.845rem;font-weight:600;
+  background:var(--panel2);border-left:3px solid var(--line);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.chip.allday{border-left-color:var(--good)}
+.chip.session{border-left-color:var(--accent);color:var(--accent)}
+
+.daygrid-card{padding:12px 12px 12px 0;overflow:hidden}
+.daygrid{position:relative;width:100%}
+.hourline{
+  position:absolute;left:46px;right:0;height:0;
+  border-top:1px solid var(--line);
+}
+.hourlabel{
+  position:absolute;left:0;width:40px;text-align:right;
+  font-size:.68rem;color:var(--mute);font-variant-numeric:tabular-nums;
+  line-height:1;
+}
+.nowline{position:absolute;left:46px;right:0;height:0;border-top:2px solid var(--warn);z-index:3}
+.nowline i{
+  position:absolute;left:-5px;top:-5px;width:8px;height:8px;
+  border-radius:99px;background:var(--warn);display:block;
+}
+.event{
+  position:absolute;z-index:2;
+  background:color-mix(in srgb, var(--accent) 22%, var(--panel));
+  border-left:3px solid var(--accent);
+  border-radius:0 8px 8px 0;
+  padding:5px 8px;overflow:hidden;
+}
+.event-time{font-size:.62rem;color:var(--mute);font-variant-numeric:tabular-nums;line-height:1.2}
+.event-title{font-size:.78rem;font-weight:650;line-height:1.25;
+  overflow:hidden;text-overflow:ellipsis}
+.event-loc{font-size:.62rem;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.daynav .iconbtn{font-size:1.5rem;line-height:1;font-weight:400}

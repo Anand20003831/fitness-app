@@ -23,7 +23,7 @@ import * as calendar from './calendar.js';
 const view = document.getElementById('view');
 const tabbar = document.getElementById('tabbar');
 
-const TABS = ['today', 'meals', 'train', 'log', 'coach', 'settings'];
+const TABS = ['today', 'calendar', 'meals', 'train', 'log', 'coach', 'settings'];
 
 // Transient screen state. Never persisted.
 const ui = { editWeight: false, sessionOverride: null, pendingPatch: null };
@@ -636,6 +636,176 @@ function renderLog() {
     </div>`;
 }
 
+// ---------------------------------------------------------------- calendar tab
+//
+// A real day view: hours down the side, timed events placed against them, and
+// all-day items as a thin strip at the top rather than pretending to occupy a
+// time. The point of it is seeing where the session fits between lectures and
+// shifts, so today's session appears in that strip too.
+
+const HOUR_PX = 58;
+const GUTTER = 46;
+
+let dayView = { date: null, state: 'idle', events: [], message: '' };
+
+function calendarRoute() {
+  const parts = (location.hash || '').slice(1).split('/');
+  return parts[1] || todayKey();
+}
+
+const LDN_HOUR = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', hour12: false, timeZone: 'Europe/London' });
+const LDN_MIN = new Intl.DateTimeFormat('en-GB', { minute: '2-digit', timeZone: 'Europe/London' });
+const LDN_DATE = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/London' });
+
+function minutesInto(iso, dateKey) {
+  const value = new Date(iso);
+  const onDate = LDN_DATE.format(value);
+  // Something that began yesterday and runs into today clamps to the top edge.
+  if (onDate < dateKey) return 0;
+  if (onDate > dateKey) return 24 * 60;
+  return Number(LDN_HOUR.format(value)) * 60 + Number(LDN_MIN.format(value));
+}
+
+function nowMinutes() {
+  const now = new Date();
+  return Number(LDN_HOUR.format(now)) * 60 + Number(LDN_MIN.format(now));
+}
+
+function renderCalendarTab() {
+  const key = calendarRoute();
+  const isToday = key === todayKey();
+  const sessionId = WEEK[dayOfWeek(key)];
+  const session = sessionId ? effectiveSession(sessionId) : null;
+
+  if (dayView.date !== key) {
+    dayView = { date: key, state: 'idle', events: [], message: '' };
+    // Painted first, fetched after. The grid never waits on Google.
+    setTimeout(() => loadDay(key), 0);
+  }
+
+  return `
+    <div class="hero">
+      <h1>${esc(formatLong(key))}</h1>
+      <p class="sub">${isToday ? 'Today' : 'Not today'}</p>
+    </div>
+
+    <div class="daynav">
+      <button class="iconbtn" type="button" data-action="day-shift" data-delta="-1" aria-label="Previous day">&lsaquo;</button>
+      <button class="btn quiet small grow" type="button" data-action="day-today">Today</button>
+      <button class="iconbtn" type="button" data-action="day-shift" data-delta="1" aria-label="Next day">&rsaquo;</button>
+      ${calendar.isConnected()
+        ? '<button class="iconbtn" type="button" data-action="day-refresh" aria-label="Refresh">&#8635;</button>' : ''}
+    </div>
+
+    <div id="dayBody">${renderDayBody(key, session)}</div>`;
+}
+
+function renderDayBody(key, session) {
+  if (!calendar.isConfigured()) {
+    return `<div class="card"><p class="small" style="margin:0">Calendar not connected.
+      Add a Google client ID in Settings and the day fills itself in.</p></div>`;
+  }
+  if (!calendar.isConnected() && dayView.state !== 'ok') {
+    return `<div class="card">
+      <p class="small" style="margin:0 0 12px">Not signed in to Google on this device.</p>
+      <button class="btn quiet wide" type="button" data-action="cal-connect">Connect Google Calendar</button>
+    </div>`;
+  }
+
+  const { timed, allDay } = calendar.layout(dayView.events);
+
+  // All-day items and the session sit above the grid as thin chips, the way a
+  // calendar app does it, because they have no time to be drawn against.
+  const chips = [
+    ...(session ? [{ label: session.name, kind: 'session' }] : []),
+    ...allDay.map((e) => ({ label: e.summary, kind: 'allday' })),
+  ];
+
+  let earliest = 8 * 60;
+  let latest = 20 * 60;
+  for (const event of timed) {
+    earliest = Math.min(earliest, minutesInto(event.start, key));
+    latest = Math.max(latest, minutesInto(event.end, key));
+  }
+  const startHour = Math.max(0, Math.floor(earliest / 60) - 1);
+  const endHour = Math.min(24, Math.ceil(latest / 60) + 1);
+  const hours = [];
+  for (let h = startHour; h <= endHour; h += 1) hours.push(h);
+  const height = (endHour - startHour) * HOUR_PX;
+  const top = (mins) => ((mins - startHour * 60) / 60) * HOUR_PX;
+
+  const now = nowMinutes();
+  const showNow = key === todayKey() && now >= startHour * 60 && now <= endHour * 60;
+
+  const chipsHtml = chips.length
+    ? `<div class="chips">${chips.map((c) => `<div class="chip ${c.kind}">${esc(c.label)}</div>`).join('')}</div>`
+    : '';
+
+  const noticeHtml = dayView.state === 'loading'
+    ? '<p class="small" style="margin:0 0 10px">Checking&hellip;</p>'
+    : (dayView.state === 'error' || dayView.state === 'offline')
+      ? `<p class="small" style="margin:0 0 10px">${esc(dayView.message || 'Could not reach Google.')}</p>`
+      : '';
+
+  return `
+    ${chipsHtml}
+    ${noticeHtml}
+    <div class="card daygrid-card">
+      <div class="daygrid" style="height:${height}px">
+        ${hours.map((h) => `
+          <div class="hourline" style="top:${top(h * 60)}px"></div>
+          <div class="hourlabel" style="top:${top(h * 60) - 7}px">${String(h % 24).padStart(2, '0')}:00</div>
+        `).join('')}
+        ${showNow ? `<div class="nowline" style="top:${top(now)}px"><i></i></div>` : ''}
+        ${timed.map((event) => {
+          const from = minutesInto(event.start, key);
+          const to = minutesInto(event.end, key);
+          const width = 99 / event.columns;
+          return `
+            <div class="event" style="top:${top(from)}px;height:${Math.max(22, ((to - from) / 60) * HOUR_PX - 2)}px;left:calc(${GUTTER}px + ${event.column * width}%);width:calc(${width}% - 8px)">
+              <div class="event-time">${esc(calendar.formatTime(event.start))}</div>
+              <div class="event-title">${esc(event.summary)}</div>
+              ${event.location ? `<div class="event-loc">${esc(event.location)}</div>` : ''}
+            </div>`;
+        }).join('')}
+      </div>
+    </div>
+    ${!timed.length && dayView.state === 'ok'
+      ? '<p class="small" style="margin:-4px 0 0">Nothing timetabled. The whole day is yours.</p>' : ''}`;
+}
+
+function paintDay() {
+  const body = document.getElementById('dayBody');
+  if (!body) return;
+  const key = calendarRoute();
+  const sessionId = WEEK[dayOfWeek(key)];
+  body.innerHTML = renderDayBody(key, sessionId ? effectiveSession(sessionId) : null);
+}
+
+async function loadDay(key, options = {}) {
+  if (!calendar.isConfigured()) return;
+  dayView = { ...dayView, date: key, state: 'loading' };
+  paintDay();
+  // Deliberately not gated on being signed in. eventsFor falls back to the
+  // cache, so a day already looked at still draws after the hour-long token
+  // has lapsed, rather than collapsing to a sign-in prompt.
+  const result = await calendar.eventsFor(key, { force: Boolean(options.force) });
+  if (calendarRoute() !== key) return;
+  dayView = { date: key, state: result.state, events: result.events || [], message: result.message || '' };
+  paintDay();
+  scrollDayIntoView();
+}
+
+// Opens somewhere useful rather than at midnight.
+function scrollDayIntoView() {
+  const grid = document.querySelector('.daygrid');
+  if (!grid) return;
+  const marker = grid.querySelector('.nowline') || grid.querySelector('.event');
+  if (!marker) return;
+  const offset = marker.getBoundingClientRect().top + window.scrollY - 150;
+  if (offset > 0) window.scrollTo({ top: offset, behavior: 'smooth' });
+}
+
 // ---------------------------------------------------------------- coach
 
 function coachRoute() {
@@ -1006,6 +1176,7 @@ const SCREENS = {
   meals: renderMeals,
   train: renderTrain,
   log: renderLog,
+  calendar: renderCalendarTab,
   coach: renderCoach,
   settings: renderSettings,
 };
@@ -1023,6 +1194,14 @@ function render() {
   for (const a of tabbar.querySelectorAll('a')) {
     if (a.dataset.tab === tab) a.setAttribute('aria-current', 'page');
     else a.removeAttribute('aria-current');
+  }
+  // Settings lives in the header now, so the gear carries the current marker
+  // when it is open. Seven tabs would have squeezed every target under the
+  // width he can hit one-handed.
+  const gear = document.querySelector('.gear');
+  if (gear) {
+    if (tab === 'settings') gear.setAttribute('aria-current', 'page');
+    else gear.removeAttribute('aria-current');
   }
   document.title = tab === 'today' ? 'Fitness' : 'Fitness · ' + tab[0].toUpperCase() + tab.slice(1);
 }
@@ -1222,6 +1401,20 @@ view.addEventListener('click', (event) => {
       });
       break;
     }
+
+    case 'day-shift': {
+      const current = calendarRoute();
+      location.hash = '#calendar/' + addDays(current, Number(el.dataset.delta));
+      break;
+    }
+
+    case 'day-today':
+      location.hash = '#calendar';
+      break;
+
+    case 'day-refresh':
+      loadDay(calendarRoute(), { force: true });
+      break;
 
     case 'cal-connect': {
       el.disabled = true;

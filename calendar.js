@@ -115,21 +115,33 @@ export async function connect() {
     }
   });
 }
-
-// Events are cached for the day so opening the app repeatedly is not repeatedly
 // hitting Google, and so a lost connection still shows this morning's schedule.
-function readCache(dateKey) {
+// Cached per date, so flicking back and forth through the week is not a
+// request each time, and so a lost connection still shows what was already
+// looked at. Capped, because this lives in localStorage next to his data.
+const CACHE_DAYS = 21;
+
+function allCache() {
   try {
     const cache = JSON.parse(local('gcalCache') || 'null');
-    if (cache && cache.date === dateKey) return cache.events;
+    if (cache && typeof cache === 'object' && !Array.isArray(cache)) return cache;
   } catch {
     // fall through
   }
-  return null;
+  return {};
+}
+
+function readCache(dateKey) {
+  const events = allCache()[dateKey];
+  return Array.isArray(events) ? events : null;
 }
 
 function writeCache(dateKey, events) {
-  local('gcalCache', JSON.stringify({ date: dateKey, events }));
+  const cache = allCache();
+  cache[dateKey] = events;
+  const keys = Object.keys(cache).sort();
+  while (keys.length > CACHE_DAYS) delete cache[keys.shift()];
+  local('gcalCache', JSON.stringify(cache));
 }
 
 // London day boundaries. Day keys are London dates, so asking Google for a UTC
@@ -163,7 +175,7 @@ function tidy(items) {
   });
 }
 
-export async function todayEvents(dateKey, { force = false } = {}) {
+export async function eventsFor(dateKey, { force = false } = {}) {
   if (!isConfigured()) return { state: 'unconfigured', events: [] };
 
   const cached = readCache(dateKey);
@@ -213,4 +225,46 @@ export function formatTime(iso) {
   } catch {
     return '';
   }
+}
+
+// Kept so the Today card reads naturally.
+export const todayEvents = eventsFor;
+
+// Lays overlapping events into columns, the way a day view has to. Events that
+// clash sit side by side rather than on top of each other.
+export function layout(events) {
+  const timed = events
+    .filter((e) => !e.allDay && e.start && e.end)
+    .map((e) => ({ ...e, from: Date.parse(e.start), to: Math.max(Date.parse(e.end), Date.parse(e.start) + 15 * 60000) }))
+    .sort((a, b) => a.from - b.from || a.to - b.to);
+
+  const placed = [];
+  let cluster = [];
+  let clusterEnd = -Infinity;
+
+  const flush = () => {
+    if (!cluster.length) return;
+    const columns = [];
+    for (const event of cluster) {
+      let index = columns.findIndex((col) => col[col.length - 1].to <= event.from);
+      if (index === -1) { columns.push([event]); index = columns.length - 1; }
+      else columns[index].push(event);
+      event.column = index;
+    }
+    for (const event of cluster) {
+      event.columns = columns.length;
+      placed.push(event);
+    }
+    cluster = [];
+    clusterEnd = -Infinity;
+  };
+
+  for (const event of timed) {
+    if (event.from >= clusterEnd && cluster.length) flush();
+    cluster.push(event);
+    clusterEnd = Math.max(clusterEnd, event.to);
+  }
+  flush();
+
+  return { timed: placed, allDay: events.filter((e) => e.allDay) };
 }
