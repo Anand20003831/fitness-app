@@ -549,6 +549,11 @@ function weightChart(series) {
   return `
     <svg class="chart" viewBox="0 0 ${width} ${height}" role="img"
       aria-label="Daily weight with the seven day rolling average">
+      <defs>
+        <linearGradient id="avgGrad" x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" class="g0"/><stop offset="1" class="g1"/>
+        </linearGradient>
+      </defs>
       ${ticks.map((t) => `
         <line x1="${pad.left}" y1="${y(t).toFixed(1)}" x2="${width - pad.right}" y2="${y(t).toFixed(1)}"
           class="grid"/>
@@ -556,6 +561,7 @@ function weightChart(series) {
       <polyline class="daily" points="${dailyPoints}"/>
       ${series.map((p, i) => `<circle cx="${x(i).toFixed(1)}" cy="${y(p.weight).toFixed(1)}" r="1.7" class="dot"/>`).join('')}
       <polyline class="avg" points="${avgPoints}"/>
+      <circle class="avgdot" cx="${x(series.length - 1).toFixed(1)}" cy="${y(average[average.length - 1].value).toFixed(1)}" r="4"/>
       <text x="${pad.left}" y="${height - 6}" class="axis">${esc(formatShort(series[0].date))}</text>
       <text x="${width - pad.right}" y="${height - 6}" class="axis" text-anchor="end">${esc(formatShort(series[series.length - 1].date))}</text>
     </svg>`;
@@ -1239,9 +1245,11 @@ function renderSessionEditor(sessionId) {
 const THEMES = [['system', 'Follow system'], ['dark', 'Dark'], ['light', 'Light']];
 const ACCENTS = [
   ['blue', 'Blue'], ['green', 'Green'], ['amber', 'Amber'],
-  ['violet', 'Violet'], ['coral', 'Coral'],
+  ['violet', 'Violet'], ['coral', 'Coral'], ['neon', 'Neon'],
 ];
 const TEXT_SIZES = [['normal', 'Normal'], ['large', 'Large']];
+const SURFACES = [['glass', 'Glass'], ['solid', 'Solid']];
+const BLOBS = [['on', 'On'], ['off', 'Off']];
 
 // Lives in settings, so it syncs. Applied by setting attributes the stylesheet
 // keys off, which is the same thing the inline script in index.html does before
@@ -1251,12 +1259,15 @@ export function applyAppearance() {
   root.setAttribute('data-theme', getSetting('theme', 'system'));
   root.setAttribute('data-accent', getSetting('accent', 'blue'));
   root.setAttribute('data-textsize', getSetting('textSize', 'normal'));
+  root.setAttribute('data-surface', getSetting('surface', 'glass'));
+  root.setAttribute('data-blobs', getSetting('blobs', 'on'));
 }
-
 function renderAppearance() {
   const theme = getSetting('theme', 'system');
   const accent = getSetting('accent', 'blue');
   const textSize = getSetting('textSize', 'normal');
+  const surface = getSetting('surface', 'glass');
+  const blobs = getSetting('blobs', 'on');
 
   return `
     <div class="card">
@@ -1282,6 +1293,20 @@ function renderAppearance() {
         ${TEXT_SIZES.map(([id, label]) => `
           <button class="choice" type="button" aria-pressed="${textSize === id}"
             data-action="set-textsize" data-value="${id}">${label}</button>`).join('')}
+      </div>
+
+      <label class="lbl" style="margin-top:18px">Surface</label>
+      <div class="choices">
+        ${SURFACES.map(([id, label]) => `
+          <button class="choice" type="button" aria-pressed="${surface === id}"
+            data-action="set-surface" data-value="${id}">${label}</button>`).join('')}
+      </div>
+
+      <label class="lbl" style="margin-top:18px">Background glow</label>
+      <div class="choices">
+        ${BLOBS.map(([id, label]) => `
+          <button class="choice" type="button" aria-pressed="${blobs === id}"
+            data-action="set-blobs" data-value="${id}">${label}</button>`).join('')}
       </div>
 
       <p class="small" style="margin:16px 0 0">The strip at the top of the phone stays dark
@@ -1665,8 +1690,11 @@ view.addEventListener('click', (event) => {
 
     case 'set-theme':
     case 'set-accent':
-    case 'set-textsize': {
-      const field = { 'set-theme': 'theme', 'set-accent': 'accent', 'set-textsize': 'textSize' }[el.dataset.action];
+    case 'set-textsize':
+    case 'set-surface':
+    case 'set-blobs': {
+      const field = { 'set-theme': 'theme', 'set-accent': 'accent', 'set-textsize': 'textSize',
+        'set-surface': 'surface', 'set-blobs': 'blobs' }[el.dataset.action];
       setSetting(field, el.dataset.value);
       applyAppearance();
       render();

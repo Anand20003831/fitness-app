@@ -27,6 +27,8 @@
     root.setAttribute('data-theme', s.theme || 'system');
     root.setAttribute('data-accent', s.accent || 'blue');
     root.setAttribute('data-textsize', s.textSize || 'normal');
+    root.setAttribute('data-surface', s.surface || 'glass');
+    root.setAttribute('data-blobs', s.blobs || 'on');
   } catch (e) {
     document.documentElement.setAttribute('data-theme', 'system');
   }
@@ -34,6 +36,11 @@
 </script>
 </head>
 <body>
+
+<!-- Decorative only. Soft blurred colour blobs behind everything, which is what
+     makes translucent cards read as glass without every card paying for a
+     backdrop-filter. -->
+<div class="blobs" aria-hidden="true"><i></i><i></i><i></i></div>
 
 <header class="topbar">
   <span class="brand">Fitness</span>

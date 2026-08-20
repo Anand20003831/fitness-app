@@ -234,6 +234,22 @@ colours, and normal or large text. All three live in `settings` so they sync to
 both devices.
 
 **The strip at the top of the phone stays dark whatever you pick.** Its colour
+Settings, Appearance also carries:
+
+- **Accent**, six choices. Each one carries a gradient partner, so the
+  gradients through the app follow the accent rather than being pinned to one
+  hue. **Neon** is violet to pink, the closest to the reference the look was
+  built from.
+- **Surface**, glass or solid. Glass is translucent panels over the background
+  glow. Solid is opaque, and cheaper to draw.
+- **Background glow**, on or off. Three large blurred colour blobs behind
+  everything. Turning them off leaves a flat dark background.
+
+Only the top bar and the tab bar use a real backdrop blur. Putting
+backdrop-filter on every card is what makes this style stutter on a mid-range
+phone, so the cards are plain translucency sitting over already-blurred blobs,
+which reads the same and costs almost nothing.
+
 is compiled into the APK and cannot follow an in-app setting, so rather than
 have it match in the browser and look broken in the app, it is held dark
 everywhere and the light theme is designed to sit under it.
